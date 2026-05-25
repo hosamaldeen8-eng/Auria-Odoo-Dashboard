@@ -22,8 +22,7 @@ AURIA_AMBER  = "#D4A853"
 AURIA_RED    = "#A32D2D"
 AURIA_LIGHT  = "#EAF3DE"
 
-LOC_NAMES = {37: "SJ/RM-Raw", 38: "SJ/PKG", 39: "SJ/RTF", 55: "SJ/FG", 45: "HD/FG"}
-
+LOC_NAMES  = {37: "SJ/RM-Raw", 38: "SJ/PKG", 39: "SJ/RTF", 55: "SJ/FG", 45: "HD/FG"}
 USER_NAMES = {
     8: "Hussam", 18: "Abdullah", 29: "Ala' Deep", 9: "Alaa Oshah",
     15: "Marwan", 13: "Nasser", 27: "Khan", 11: "Wesal", 23: "Bader", 6: "Moad",
@@ -35,52 +34,48 @@ def get_models():
     return xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
 
 def odoo(model, method, domain=None, kwargs=None):
-    models = get_models()
-    return models.execute_kw(
-        ODOO_DB, ODOO_UID, ODOO_PWD,
-        model, method,
-        [domain or []],
-        kwargs or {},
+    return get_models().execute_kw(
+        ODOO_DB, ODOO_UID, ODOO_PWD, model, method,
+        [domain or []], kwargs or {},
     )
 
-# ── Data fetchers (cached per TTL) ────────────────────────────────────────────
+# ── Data fetcher ──────────────────────────────────────────────────────────────
 @st.cache_data(ttl=60)
 def fetch_all():
-    today = str(date.today())
+    today      = str(date.today())
     thirty_ago = str(date.today() - timedelta(days=30))
 
-    tasks = odoo("project.task", "search_read",
-        [["active", "=", True]],
-        {"fields": ["name","project_id","user_ids","priority","date_deadline","stage_id"], "limit": 300})
-
-    mos = odoo("mrp.production", "search_read",
-        [["state", "in", ["confirmed","progress"]]],
-        {"fields": ["name","product_id","product_qty","state","date_start"], "limit": 50})
-
+    tasks = odoo("project.task", "search_read", [["active","=",True]],
+        {"fields":["name","project_id","user_ids","priority","date_deadline","stage_id"],"limit":300})
+    mos = odoo("mrp.production", "search_read", [["state","in",["confirmed","progress"]]],
+        {"fields":["name","product_id","product_qty","state","date_start"],"limit":50})
     quants = odoo("stock.quant", "search_read",
-        [["location_id","in",[37,38,39,55,45]], ["quantity",">",0]],
-        {"fields": ["product_id","location_id","quantity"], "limit": 400})
-
+        [["location_id","in",[37,38,39,55,45]],["quantity",">",0]],
+        {"fields":["product_id","location_id","quantity"],"limit":400})
     acct = odoo("account.move.line", "read_group",
         [["account_id.code","in",
           ["11040100","11040150","11040200","11040300",
            "11040500","11040800","11040900","11060000","51010000"]],
          ["move_id.state","=","posted"]],
-        {"fields":["account_id","balance:sum"], "groupby":["account_id"]})
-
+        {"fields":["account_id","balance:sum"],"groupby":["account_id"]})
     overdue = odoo("project.task", "search_read",
         [["date_deadline","<",today],["active","=",True]],
-        {"fields":["name","project_id","user_ids","date_deadline","priority"], "limit": 100})
-
-    projects = odoo("project.project","search_read",[],
-        {"fields":["id","name","task_count"]})
-
+        {"fields":["name","project_id","user_ids","date_deadline","priority"],"limit":100})
+    projects = odoo("project.project","search_read",[],{"fields":["id","name","task_count"]})
     sales = odoo("sale.order","search_read",
         [["state","in",["sale","done"]],["date_order",">=",thirty_ago]],
         {"fields":["name","amount_total","date_order"],"limit":200})
 
     return dict(tasks=tasks, mos=mos, quants=quants, acct=acct,
                 overdue=overdue, projects=projects, sales=sales, today=today)
+
+# ── Theme detection ───────────────────────────────────────────────────────────
+# Detect Streamlit's active theme so we can adapt card/chart colors
+def is_dark():
+    try:
+        return st.get_option("theme.base") == "dark"
+    except Exception:
+        return False
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -90,9 +85,26 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# ── Theme-aware colors ────────────────────────────────────────────────────────
+dark = is_dark()
+
+CARD_BG      = "#1e2a1f"   if dark else "#ffffff"
+CARD_BORDER  = "#2d442e"   if dark else "#e0e0e0"
+TEXT_MAIN    = "#e8f5e9"   if dark else "#1a1a1a"
+TEXT_MUTED   = "#8fb88a"   if dark else "#666666"
+PLOT_BG      = "#141e15"   if dark else "#ffffff"
+PAPER_BG     = "#141e15"   if dark else "#ffffff"
+PLOT_TEXT    = "#c8e6c9"   if dark else "#333333"
+ALERT_CRIT_BG    = "#3b1212" if dark else "#FCEBEB"
+ALERT_CRIT_TEXT  = "#f4a0a0" if dark else "#7a1a1a"
+ALERT_WARN_BG    = "#3b3010" if dark else "#FFF3CD"
+ALERT_WARN_TEXT  = "#f4d080" if dark else "#7a5c00"
+ALERT_OK_BG      = "#142414" if dark else "#EAF3DE"
+ALERT_OK_TEXT    = "#88cc88" if dark else "#27500A"
+
+# ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
-  [data-testid="stAppViewContainer"] {{ background: #f7f6f2; }}
   .header-bar {{
       background: {AURIA_GREEN}; color: white; padding: 14px 24px;
       border-radius: 12px; margin-bottom: 20px;
@@ -100,21 +112,41 @@ st.markdown(f"""
   }}
   .header-bar h1 {{ margin: 0; font-size: 20px; font-weight: 500; }}
   .header-bar small {{ opacity: .7; font-size: 12px; }}
+  .kpi-card {{
+      background: {CARD_BG}; border: 0.5px solid {CARD_BORDER};
+      border-radius: 10px; padding: 12px 14px; height: 90px;
+  }}
+  .kpi-label {{ font-size: 12px; color: {TEXT_MUTED}; margin-bottom: 2px; }}
+  .kpi-val   {{ font-size: 26px; font-weight: 600; }}
+  .kpi-sub   {{ font-size: 11px; color: {TEXT_MUTED}; }}
   .alert-crit {{
-      background: #FCEBEB; border-left: 4px solid {AURIA_RED};
+      background: {ALERT_CRIT_BG}; border-left: 4px solid {AURIA_RED};
+      color: {ALERT_CRIT_TEXT};
       padding: 10px 14px; border-radius: 6px; margin-bottom: 8px; font-size: 13px;
   }}
   .alert-warn {{
-      background: #FFF3CD; border-left: 4px solid {AURIA_AMBER};
+      background: {ALERT_WARN_BG}; border-left: 4px solid {AURIA_AMBER};
+      color: {ALERT_WARN_TEXT};
       padding: 10px 14px; border-radius: 6px; margin-bottom: 8px; font-size: 13px;
   }}
   .alert-ok {{
-      background: {AURIA_LIGHT}; border-left: 4px solid {AURIA_MID};
+      background: {ALERT_OK_BG}; border-left: 4px solid {AURIA_MID};
+      color: {ALERT_OK_TEXT};
       padding: 10px 14px; border-radius: 6px; margin-bottom: 8px; font-size: 13px;
   }}
-  .metric-label {{ font-size: 12px; color: #666; margin-bottom: 2px; }}
-  .metric-val   {{ font-size: 26px; font-weight: 600; color: {AURIA_AMBER}; }}
-  .metric-sub   {{ font-size: 11px; color: #888; }}
+  .mo-card {{
+      background: {CARD_BG}; border: 0.5px solid {CARD_BORDER};
+      border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
+  }}
+  .mo-title {{ font-weight: 600; font-size: 14px; color: {TEXT_MAIN}; }}
+  .mo-sub   {{ font-size: 12px; color: {TEXT_MUTED}; margin: 4px 0; }}
+  .badge {{
+      display: inline-block; padding: 2px 8px;
+      border-radius: 20px; font-size: 12px; margin-right: 6px;
+  }}
+  .badge-green {{ background: {ALERT_OK_BG};  color: {AURIA_MID}; }}
+  .badge-amber {{ background: {ALERT_WARN_BG}; color: #c48a00; }}
+  footer {{ display: none; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -141,7 +173,7 @@ projects = data["projects"]
 sales    = data["sales"]
 today    = data["today"]
 
-# Parse accounting
+# ── Parse accounting ──────────────────────────────────────────────────────────
 acct_map = {}
 for a in acct:
     name = a["account_id"][1] if a["account_id"] else ""
@@ -153,14 +185,10 @@ def bal(code):
             return v
     return 0
 
-raw_herbs = bal("11040100")
-raw_oils  = bal("11040150")
-wip       = bal("11040200")
-fg_val    = bal("11040300")
-pkg_val   = bal("11040500")
-rtf_val   = bal("11040800")
-interim   = abs(bal("11060000"))
-cogs      = bal("51010000")
+raw_herbs = bal("11040100");  raw_oils = bal("11040150")
+wip       = bal("11040200");  fg_val   = bal("11040300")
+pkg_val   = bal("11040500");  rtf_val  = bal("11040800")
+interim   = abs(bal("11060000")); cogs  = bal("51010000")
 
 total_sales_30d = sum(s["amount_total"] for s in sales)
 urgent_tasks    = sum(1 for t in tasks if t["priority"] == "1")
@@ -170,28 +198,28 @@ n_mos           = len(mos)
 # ── KPI row ───────────────────────────────────────────────────────────────────
 st.markdown("#### Key performance indicators")
 k1,k2,k3,k4,k5,k6 = st.columns(6)
+
 def kpi(col, label, val, sub="", color=AURIA_AMBER):
     col.markdown(f"""
-    <div style="background:white;border-radius:10px;padding:12px 14px;
-                border:0.5px solid #ddd;height:90px">
-      <div class="metric-label">{label}</div>
-      <div class="metric-val" style="color:{color}">{val}</div>
-      <div class="metric-sub">{sub}</div>
+    <div class="kpi-card">
+      <div class="kpi-label">{label}</div>
+      <div class="kpi-val" style="color:{color}">{val}</div>
+      <div class="kpi-sub">{sub}</div>
     </div>""", unsafe_allow_html=True)
 
-kpi(k1, "Sales — 30 days", f"{total_sales_30d:,.0f}", "LYD")
-kpi(k2, "Finished Goods", f"{fg_val:,.0f}", "LYD value")
-kpi(k3, "Packaging", f"{pkg_val:,.0f}", "LYD value")
-kpi(k4, "Active MOs", str(n_mos), "manufacturing orders", AURIA_MID)
-kpi(k5, "Overdue tasks", str(n_overdue), f"{urgent_tasks} urgent",
+kpi(k1, "Sales — 30 days",   f"{total_sales_30d:,.0f}", "LYD")
+kpi(k2, "Finished Goods",    f"{fg_val:,.0f}",           "LYD value")
+kpi(k3, "Packaging",         f"{pkg_val:,.0f}",          "LYD value")
+kpi(k4, "Active MOs",        str(n_mos),                 "manufacturing orders", AURIA_MID)
+kpi(k5, "Overdue tasks",     str(n_overdue),             f"{urgent_tasks} urgent",
     AURIA_RED if n_overdue > 3 else AURIA_AMBER)
-kpi(k6, "Interim Received", f"{interim:,.0f}",
+kpi(k6, "Interim Received",  f"{interim:,.0f}",
     "⚠️ CRITICAL — >50K" if interim > 50000 else "LYD",
     AURIA_RED if interim > 50000 else AURIA_AMBER)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ── Alerts ────────────────────────────────────────────────────────────────────
+# ── Alerts + MOs ─────────────────────────────────────────────────────────────
 col_alert, col_mos = st.columns([1.2, 1])
 
 with col_alert:
@@ -214,34 +242,24 @@ with col_mos:
     st.markdown("#### Active manufacturing orders")
     if mos:
         for m in mos:
-            state_color = AURIA_MID if m["state"] == "progress" else AURIA_AMBER
+            badge_cls = "badge-green" if m["state"] == "progress" else "badge-amber"
             st.markdown(f"""
-            <div style="background:white;border-radius:10px;padding:12px 14px;
-                        border:0.5px solid #ddd;margin-bottom:8px">
-              <div style="font-weight:600;font-size:14px">{m["name"]}</div>
-              <div style="font-size:12px;color:#555;margin:4px 0">{m["product_id"][1]}</div>
-              <div style="display:flex;gap:10px;font-size:12px">
-                <span style="background:{AURIA_LIGHT};color:{AURIA_MID};
-                             padding:2px 8px;border-radius:20px">
-                  {m["product_qty"]} units
-                </span>
-                <span style="background:{'#EAF3DE' if m['state']=='progress' else '#FFF3CD'};
-                             color:{state_color};padding:2px 8px;border-radius:20px">
-                  {m["state"]}
-                </span>
-              </div>
+            <div class="mo-card">
+              <div class="mo-title">{m["name"]}</div>
+              <div class="mo-sub">{m["product_id"][1]}</div>
+              <span class="badge badge-green">{m["product_qty"]} units</span>
+              <span class="badge {badge_cls}">{m["state"]}</span>
             </div>""", unsafe_allow_html=True)
     else:
         st.info("No active manufacturing orders.")
 
 st.markdown("---")
 
-# ── Inventory charts ───────────────────────────────────────────────────────────
+# ── Inventory charts ──────────────────────────────────────────────────────────
 st.markdown("#### Inventory")
 c1, c2 = st.columns(2)
 
 with c1:
-    # Units by location
     loc_totals = {}
     for q in quants:
         lid = q["location_id"][0]
@@ -251,27 +269,24 @@ with c1:
         for k, v in loc_totals.items()
     ]).sort_values("Units", ascending=True)
     fig = px.bar(df_loc, x="Units", y="Location", orientation="h",
-                 color_discrete_sequence=[AURIA_MID],
-                 title="Total units by location")
+                 color_discrete_sequence=[AURIA_MID], title="Total units by location")
     fig.update_layout(margin=dict(l=0,r=0,t=40,b=0), height=280,
-                      plot_bgcolor="white", paper_bgcolor="white")
+                      plot_bgcolor=PLOT_BG, paper_bgcolor=PAPER_BG,
+                      font_color=PLOT_TEXT)
     st.plotly_chart(fig, use_container_width=True)
 
 with c2:
-    # Accounting stock values pie
     labels = ["Raw Herbs","Raw Oils","RTF","Finished Goods","Packaging","By-Products"]
     values = [raw_herbs, raw_oils, rtf_val, fg_val, pkg_val, bal("11040900")]
-    colors = [AURIA_GREEN, AURIA_MID, "#5A9E34","#D4A853","#888780","#A0A89A"]
+    colors = [AURIA_GREEN, AURIA_MID, "#5A9E34", "#D4A853", "#888780", "#A0A89A"]
     fig2 = go.Figure(go.Pie(labels=labels, values=values,
-                            marker_colors=colors,
-                            hole=0.45, textinfo="label+percent"))
+                            marker_colors=colors, hole=0.45, textinfo="label+percent"))
     fig2.update_layout(title="Inventory value breakdown (LYD)",
                        margin=dict(l=0,r=0,t=40,b=0), height=280,
-                       paper_bgcolor="white",
+                       paper_bgcolor=PAPER_BG, font_color=PLOT_TEXT,
                        legend=dict(font=dict(size=11)))
     st.plotly_chart(fig2, use_container_width=True)
 
-# Top products at each location
 c3, c4 = st.columns(2)
 def top_products(loc_id, n=10):
     items = [(q["product_id"][1], round(q["quantity"]))
@@ -279,25 +294,23 @@ def top_products(loc_id, n=10):
     return sorted(items, key=lambda x: -x[1])[:n]
 
 with c3:
-    items = top_products(55)  # SJ/FG
+    items = top_products(55)
     if items:
         df = pd.DataFrame(items, columns=["Product","Qty"])
         fig = px.bar(df, x="Qty", y="Product", orientation="h",
-                     color_discrete_sequence=[AURIA_GREEN],
-                     title="SJ/FG — top finished goods")
+                     color_discrete_sequence=[AURIA_GREEN], title="SJ/FG — top finished goods")
         fig.update_layout(margin=dict(l=0,r=0,t=40,b=0), height=320,
-                          plot_bgcolor="white", paper_bgcolor="white")
+                          plot_bgcolor=PLOT_BG, paper_bgcolor=PAPER_BG, font_color=PLOT_TEXT)
         st.plotly_chart(fig, use_container_width=True)
 
 with c4:
-    items = top_products(45)  # HD/FG
+    items = top_products(45)
     if items:
         df = pd.DataFrame(items, columns=["Product","Qty"])
         fig = px.bar(df, x="Qty", y="Product", orientation="h",
-                     color_discrete_sequence=[AURIA_AMBER],
-                     title="HD/FG — top finished goods")
+                     color_discrete_sequence=[AURIA_AMBER], title="HD/FG — top finished goods")
         fig.update_layout(margin=dict(l=0,r=0,t=40,b=0), height=320,
-                          plot_bgcolor="white", paper_bgcolor="white")
+                          plot_bgcolor=PLOT_BG, paper_bgcolor=PAPER_BG, font_color=PLOT_TEXT)
         st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("---")
@@ -310,11 +323,12 @@ if sales:
     df_daily = df_sales.groupby("date")["amount_total"].sum().reset_index()
     df_daily.columns = ["Date","Revenue (LYD)"]
     fig = px.area(df_daily, x="Date", y="Revenue (LYD)",
-                  color_discrete_sequence=[AURIA_MID],
-                  title="Daily revenue (LYD)")
-    fig.update_traces(fill="tozeroy", fillcolor=AURIA_LIGHT, line_color=AURIA_MID)
+                  color_discrete_sequence=[AURIA_MID], title="Daily revenue (LYD)")
+    fig.update_traces(fill="tozeroy",
+                      fillcolor="rgba(59,109,17,0.2)" if not dark else "rgba(59,109,17,0.35)",
+                      line_color=AURIA_MID)
     fig.update_layout(margin=dict(l=0,r=0,t=40,b=0), height=220,
-                      plot_bgcolor="white", paper_bgcolor="white")
+                      plot_bgcolor=PLOT_BG, paper_bgcolor=PAPER_BG, font_color=PLOT_TEXT)
     st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("---")
@@ -332,7 +346,7 @@ with tc1:
     fig = px.bar(df_proj, x="Tasks", y="Project", orientation="h",
                  color_discrete_sequence=[AURIA_GREEN])
     fig.update_layout(margin=dict(l=0,r=0,t=10,b=0), height=300,
-                      plot_bgcolor="white", paper_bgcolor="white")
+                      plot_bgcolor=PLOT_BG, paper_bgcolor=PAPER_BG, font_color=PLOT_TEXT)
     st.plotly_chart(fig, use_container_width=True)
 
 with tc2:
@@ -349,44 +363,41 @@ with tc2:
                 "Deadline": dl,
                 "Urgent": "🔴" if t["priority"] == "1" else "",
             })
-        df_od = pd.DataFrame(rows)
-        st.dataframe(df_od, use_container_width=True, hide_index=True,
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True,
                      column_config={"Urgent": st.column_config.TextColumn(width="small")})
     else:
         st.success("No overdue tasks 🎉")
 
 st.markdown("---")
 
-# ── Accounting summary ────────────────────────────────────────────────────────
+# ── Accounting ────────────────────────────────────────────────────────────────
 st.markdown("#### Accounting summary")
 acct_rows = [
-    ("11040100", "Raw Herbs",         raw_herbs, False),
-    ("11040150", "Raw Oils",          raw_oils,  False),
-    ("11040200", "WIP",               wip,       abs(wip) > 100),
-    ("11040300", "Finished Goods",    fg_val,    False),
-    ("11040500", "Packaging",         pkg_val,   False),
-    ("11040800", "RTF",               rtf_val,   False),
-    ("11040900", "By-Products",       bal("11040900"), False),
-    ("11060000", "Interim Received",  interim,   interim > 50000),
-    ("51010000", "COGS",              cogs,      False),
+    ("11040100","Raw Herbs",        raw_herbs, False),
+    ("11040150","Raw Oils",         raw_oils,  False),
+    ("11040200","WIP",              wip,       abs(wip) > 100),
+    ("11040300","Finished Goods",   fg_val,    False),
+    ("11040500","Packaging",        pkg_val,   False),
+    ("11040800","RTF",              rtf_val,   False),
+    ("11040900","By-Products",      bal("11040900"), False),
+    ("11060000","Interim Received", interim,   interim > 50000),
+    ("51010000","COGS",             cogs,      False),
 ]
 df_acct = pd.DataFrame([
     {"Code": c, "Account": n, "Balance (LYD)": f"{v:,.2f}",
-     "Status": "⚠️ CRITICAL" if flag else ("✅ OK" if not flag else "")}
+     "Status": "⚠️ CRITICAL" if flag else "✅ OK"}
     for c, n, v, flag in acct_rows
 ])
 st.dataframe(df_acct, use_container_width=True, hide_index=True)
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown(f"""
-<div style="margin-top:30px;padding:10px 0;border-top:1px solid #ddd;
-            font-size:11px;color:#999;text-align:center">
-  Auria Operations Dashboard · Data refreshes every 60 seconds ·
+<div style="margin-top:30px;padding:10px 0;border-top:1px solid {CARD_BORDER};
+            font-size:11px;color:{TEXT_MUTED};text-align:center">
+  Auria Operations Dashboard · Auto-refreshes every 60 seconds ·
   Connected to {ODOO_URL}
 </div>""", unsafe_allow_html=True)
 
-# Auto-refresh every 60 s
 st.markdown("""
-<script>
-  setTimeout(() => window.location.reload(), 60000);
-</script>""", unsafe_allow_html=True)
+<script>setTimeout(() => window.location.reload(), 60000);</script>
+""", unsafe_allow_html=True)
