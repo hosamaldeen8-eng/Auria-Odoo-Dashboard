@@ -41,8 +41,8 @@ def odoo(model, method, domain=None, kwargs=None):
 
 # ── Data fetcher ──────────────────────────────────────────────────────────────
 @st.cache_data(ttl=30)
-def fetch_all():
-    today      = str(date.today())
+def fetch_all(cache_key=None):
+    today      = cache_key or str(date.today())
     thirty_ago = str(date.today() - timedelta(days=30))
 
     tasks = odoo("project.task", "search_read", [["active","=",True]],
@@ -169,7 +169,7 @@ with col_ts:
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 with st.spinner("Fetching live data from Odoo…"):
-    data = fetch_all()
+    data = fetch_all(cache_key=str(date.today()))
 
 tasks    = data["tasks"]
 mos      = data["mos"]
