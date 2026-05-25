@@ -105,13 +105,6 @@ ALERT_OK_TEXT    = "#88cc88" if dark else "#27500A"
 # ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
-  .header-bar {{
-      background: {AURIA_GREEN}; color: white; padding: 14px 24px;
-      border-radius: 12px; margin-bottom: 20px;
-      display: flex; align-items: center; justify-content: space-between;
-  }}
-  .header-bar h1 {{ margin: 0; font-size: 20px; font-weight: 500; }}
-  .header-bar small {{ opacity: .7; font-size: 12px; }}
   .kpi-card {{
       background: {CARD_BG}; border: 0.5px solid {CARD_BORDER};
       border-radius: 10px; padding: 12px 14px; height: 90px;
@@ -151,14 +144,16 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ── Header ────────────────────────────────────────────────────────────────────
-st.markdown(f"""
-<div class="header-bar">
-  <div><h1>🌿 Auria — لوحة العمليات</h1><small>Live data from odoo.auria.global</small></div>
-  <div style="text-align:right;font-size:13px;opacity:.85">
-      {datetime.now().strftime("%A, %d %B %Y · %H:%M")}
-  </div>
-</div>
-""", unsafe_allow_html=True)
+# Use a colored divider + columns instead of a white-background HTML div,
+# so it inherits Streamlit's dark/light theme naturally.
+st.markdown(
+    f"<div style='border-left:6px solid {AURIA_GREEN};padding:8px 16px;"
+    f"border-radius:4px;margin-bottom:8px'>"
+    f"<span style='font-size:22px;font-weight:500'>🌿 Auria — لوحة العمليات</span><br>"
+    f"<span style='font-size:12px;opacity:.6'>Live · odoo.auria.global · "
+    f"{datetime.now().strftime('%A, %d %B %Y · %H:%M')}</span></div>",
+    unsafe_allow_html=True,
+)
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 with st.spinner("Fetching live data from Odoo…"):
