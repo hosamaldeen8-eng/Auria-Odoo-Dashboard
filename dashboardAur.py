@@ -58,9 +58,12 @@ def fetch_all(cache_key=None):
            "11040500","11040800","11040900","11060000","51010000"]],
          ["move_id.state","=","posted"]],
         {"fields":["account_id","balance:sum"],"groupby":["account_id"]})
+    # Exclude completed stages: Done, Cancelled, Delivered, Ordered, Received, Approved, Resolved, Published
+    DONE_STAGES = [14, 15, 28, 29, 41, 66, 68, 70, 74, 75, 79, 83]
     overdue = odoo("project.task", "search_read",
-        [["date_deadline","<",today],["active","=",True]],
-        {"fields":["name","project_id","user_ids","date_deadline","priority"],"limit":100})
+        [["date_deadline","<",today], ["active","=",True],
+         ["stage_id","not in",DONE_STAGES]],
+        {"fields":["name","project_id","user_ids","date_deadline","priority","stage_id"],"limit":100})
     projects = odoo("project.project","search_read",[],{"fields":["id","name","task_count"]})
     sales = odoo("sale.order","search_read",
         [["state","in",["sale","done"]],["date_order",">=",thirty_ago]],
