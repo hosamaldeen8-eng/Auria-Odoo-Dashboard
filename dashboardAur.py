@@ -40,7 +40,7 @@ def odoo(model, method, domain=None, kwargs=None):
     )
 
 # ── Data fetcher ──────────────────────────────────────────────────────────────
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def fetch_all():
     today      = str(date.today())
     thirty_ago = str(date.today() - timedelta(days=30))
@@ -154,6 +154,18 @@ st.markdown(
     f"{datetime.now().strftime('%A, %d %B %Y · %H:%M')}</span></div>",
     unsafe_allow_html=True,
 )
+
+# ── Refresh button ────────────────────────────────────────────────────────────
+col_refresh, col_ts = st.columns([1, 5])
+with col_refresh:
+    if st.button("🔄 Refresh now"):
+        st.cache_data.clear()
+        st.rerun()
+with col_ts:
+    st.markdown(
+        f"<span style='font-size:12px;opacity:.5'>Last fetched: {datetime.now().strftime('%H:%M:%S')} · auto-refreshes every 30s</span>",
+        unsafe_allow_html=True,
+    )
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 with st.spinner("Fetching live data from Odoo…"):
