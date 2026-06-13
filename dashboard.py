@@ -712,6 +712,263 @@ with tab3:
             for c in sorted(convos,key=lambda x:x["updated"],reverse=True)])
         st.dataframe(df_c,use_container_width=True,hide_index=True)
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — TEAM MANAGEMENT
+# ══════════════════════════════════════════════════════════════════════════════
+with tab4:
+    from datetime import date as _date, timedelta as _td
+
+    USER_NAMES_T = {
+        8:"Hussam",18:"Abdullah",29:"Ala Deep",9:"Alaa Oshah",
+        15:"Marwan",13:"Nasser",27:"Khan",11:"Wesal",23:"Bader",
+        6:"Moad",31:"Weam",30:"Wegdan",24:"Amal",12:"Wala",10:"Znjabel"
+    }
+
+    all_t   = td["all_tasks"]
+    done_w  = td["done_week"]
+    mos_t   = td["mos"]
+    rm_r    = td["rm_receipts"]
+    sjhd    = td["sj_hd"]
+    sw      = td["sales_week"]
+    fg_hd_t = td["fg_hd"]
+    ret_t   = td["returns"]
+    del_t   = td["deliveries"]
+    rfqs_t  = td["rfqs"]
+    pos_t   = td["pos"]
+    week_s  = td["week_start"]
+    today_s = td["today"]
+
+    OPEN_STATES = ["01_in_progress","02_changes_requested","03_approved","04_waiting_normal"]
+
+    def dept_tasks(proj_id):
+        open_t = [t for t in all_t if t["project_id"] and t["project_id"][0]==proj_id
+                  and t["state"] in OPEN_STATES]
+        done_t = [t for t in done_w if t["project_id"] and t["project_id"][0]==proj_id]
+        return open_t, done_t
+
+    def state_pill(state):
+        m2 = {"01_in_progress":(AMBER,"In Progress"),
+               "02_changes_requested":("#e69500","Changes Req."),
+               "03_approved":(MID,"Approved"),
+               "04_waiting_normal":(MUTED,"Waiting")}
+        c,lbl = m2.get(state,(MUTED,"—"))
+        return '<span style="background:'+c+'22;color:'+c+';padding:1px 7px;border-radius:20px;font-size:10px;font-weight:600">'+lbl+'</span>'
+
+    def dl_pill(dl):
+        if not dl: return ""
+        d = dl[:10]
+        color = CRIT_FG if d < today_s else WARN_FG if d == today_s else MUTED
+        return '<span style="color:'+color+';font-size:10px">'+d+'</span>'
+
+    def task_table_html(tasks, max_rows=10):
+        if not tasks:
+            return '<div class="al al-o" style="margin:0;font-size:12px">No open tasks</div>'
+        rows = ""
+        for t in tasks[:max_rows]:
+            users = ", ".join(USER_NAMES_T.get(u,str(u)) for u in t.get("user_ids",[])) or "—"
+            name = t["name"][:48]
+            rows += "<tr><td style='padding:5px 8px;font-size:12px;color:"+TEXT+"'>"+name+"</td>"
+            rows += "<td style='padding:5px 4px'>"+state_pill(t.get("state",""))+"</td>"
+            rows += "<td style='padding:5px 4px;font-size:11px;color:"+MUTED+"'>"+users+"</td>"
+            rows += "<td style='padding:5px 4px'>"+dl_pill(t.get("date_deadline",""))+"</td></tr>"
+        if len(tasks)>max_rows:
+            rows += "<tr><td colspan='4' style='font-size:10px;color:"+MUTED+";padding:4px 8px'>+"+str(len(tasks)-max_rows)+" more</td></tr>"
+        hdr = ("<thead><tr>"
+               "<th style='text-align:left;font-size:10px;color:"+MUTED+";padding:4px 8px;border-bottom:1px solid "+BORDER+"'>Task</th>"
+               "<th style='font-size:10px;color:"+MUTED+";padding:4px;border-bottom:1px solid "+BORDER+"'>Status</th>"
+               "<th style='font-size:10px;color:"+MUTED+";padding:4px;border-bottom:1px solid "+BORDER+"'>Owner</th>"
+               "<th style='font-size:10px;color:"+MUTED+";padding:4px;border-bottom:1px solid "+BORDER+"'>Due</th>"
+               "</tr></thead>")
+        return "<table style='width:100%;border-collapse:collapse'>"+hdr+"<tbody>"+rows+"</tbody></table>"
+
+    def done_table_html(tasks, max_rows=8):
+        if not tasks: return '<div style="font-size:12px;color:'+MUTED+'">No completed tasks this week</div>'
+        rows=""
+        for t in tasks[:max_rows]:
+            users = ", ".join(USER_NAMES_T.get(u,str(u)) for u in t.get("user_ids",[])) or "—"
+            rows += "<tr><td style='padding:4px 8px;font-size:12px;color:"+TEXT+"'>✅ "+t["name"][:45]+"</td>"
+            rows += "<td style='padding:4px;font-size:11px;color:"+MUTED+"'>"+users+"</td>"
+            rows += "<td style='padding:4px;font-size:10px;color:"+MUTED+"'>"+t["write_date"][:10]+"</td></tr>"
+        return "<table style='width:100%;border-collapse:collapse'><tbody>"+rows+"</tbody></table>"
+
+    def picking_table_html(picks, max_rows=6):
+        if not picks: return '<div style="font-size:12px;color:'+MUTED+'">None this week</div>'
+        rows=""
+        for p in picks[:max_rows]:
+            color = OK_FG if p["state"]=="done" else WARN_FG if p["state"] in ["assigned","confirmed"] else MUTED
+            rows += "<tr><td style='padding:4px 8px;font-size:12px;color:"+TEXT+"'>"+p["name"]+"</td>"
+            rows += "<td style='padding:4px;font-size:11px;color:"+color+";font-weight:500'>"+p["state"]+"</td>"
+            rows += "<td style='padding:4px;font-size:10px;color:"+MUTED+"'>"+p["date"][:10]+"</td></tr>"
+        return "<table style='width:100%;border-collapse:collapse'><tbody>"+rows+"</tbody></table>"
+
+    def dept_header_html(icon, name, open_count, done_count):
+        return ("<div style='display:flex;align-items:center;gap:10px;margin-bottom:12px;"
+                "padding-bottom:10px;border-bottom:2px solid "+BORDER+"'>"
+                "<div style='font-size:22px'>"+icon+"</div><div>"
+                "<div style='font-size:16px;font-weight:600;color:"+TEXT+"'>"+name+"</div>"
+                "<div style='font-size:11px;color:"+MUTED+"'>"
+                "<span style='color:"+AMBER+";font-weight:500'>"+str(open_count)+" open</span>"
+                " &nbsp;·&nbsp; "
+                "<span style='color:"+OK_FG+";font-weight:500'>"+str(done_count)+" done this week</span>"
+                "</div></div></div>")
+
+    def stat_row_html(items):
+        cards = ""
+        for lbl,val,col in items:
+            cards += ("<div style='background:"+BG2+";border-radius:8px;padding:8px 12px;"
+                      "text-align:center;flex:1'>"
+                      "<div style='font-size:18px;font-weight:600;color:"+col+"'>"+str(val)+"</div>"
+                      "<div style='font-size:10px;color:"+MUTED+";margin-top:2px'>"+lbl+"</div>"
+                      "</div>")
+        return "<div style='display:flex;gap:8px;margin-bottom:10px'>"+cards+"</div>"
+
+    def slabel(label):
+        return "<div style='font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:"+MUTED+";margin:10px 0 5px'>"+label+"</div>"
+
+    def card_wrap(html):
+        return "<div style='background:"+CARD+";border:0.5px solid "+BORDER+";border-radius:12px;padding:16px;height:100%'>"+html+"</div>"
+
+    st.markdown(
+        "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:16px'>"
+        "<div style='font-size:18px;font-weight:600;color:"+TEXT+"'>👥 Team Management — Weekly Overview</div>"
+        "<div style='font-size:11px;color:"+MUTED+"'>Week from "+week_s+"</div></div>",
+        unsafe_allow_html=True)
+
+    # ── ROW 1: Production + Operations ──────────────────────────────────────
+    r1c1, r1c2 = st.columns(2)
+
+    with r1c1:
+        open_t, done_t = dept_tasks(3)
+        mo_prog  = [x for x in mos_t if x["state"]=="progress"]
+        mo_done  = [x for x in mos_t if x["state"]=="done"]
+        html = dept_header_html("🏭","Production",len(open_t),len(done_t))
+        html += stat_row_html([("MOs Active",len(mo_prog),AMBER),("MOs Done",len(mo_done),OK_FG),("RM Receipts",len(rm_r),MID),("SJ→HD",len(sjhd),BLUE)])
+        # Active MOs
+        html += slabel("Active Manufacturing Orders")
+        if mo_prog:
+            mo_rows=""
+            for mo in mo_prog[:6]:
+                pct = round(mo["qty_produced"]/mo["product_qty"]*100) if mo["product_qty"] else 0
+                bc = OK_FG if pct==100 else AMBER
+                mo_rows += ("<tr><td style='padding:5px 8px;font-size:12px;color:"+TEXT+"'>"+mo["name"]+"</td>"
+                    "<td style='padding:5px 8px;font-size:11px;color:"+MUTED+"'>"+mo["product_id"][1][:25]+"</td>"
+                    "<td style='padding:5px 8px'><div style='display:flex;align-items:center;gap:6px'>"
+                    "<div style='width:55px;height:5px;background:"+BG2+";border-radius:3px;overflow:hidden'>"
+                    "<div style='width:"+str(pct)+"%;height:100%;background:"+bc+"'></div></div>"
+                    "<span style='font-size:10px;color:"+MUTED+"'>"+str(pct)+"%</span></div></td></tr>")
+            html += "<table style='width:100%;border-collapse:collapse'><tbody>"+mo_rows+"</tbody></table>"
+        else:
+            html += "<div style='font-size:12px;color:"+MUTED+"'>No active MOs</div>"
+        html += slabel("SJ → HD Transfers ("+str(len(sjhd))+")")
+        html += picking_table_html(sjhd,5)
+        html += slabel("Open Tasks ("+str(len(open_t))+")")
+        html += task_table_html(open_t)
+        html += slabel("Done this week ("+str(len(done_t))+")")
+        html += done_table_html(done_t)
+        st.markdown(card_wrap(html), unsafe_allow_html=True)
+
+    with r1c2:
+        open_t, done_t = dept_tasks(7)
+        del_done = len([d for d in del_t if d["state"]=="done"])
+        fg_done  = len([f for f in fg_hd_t if f["state"]=="done"])
+        ret_pend = len([r for r in ret_t if r["state"] in ["assigned","confirmed"]])
+        html = dept_header_html("📦","Operations & Facilities",len(open_t),len(done_t))
+        html += stat_row_html([("Sales (wk)",len(sw),AMBER),("Deliveries",del_done,MID),("FG Rcvd HD",fg_done,OK_FG),("Returns Pend",ret_pend,RED)])
+        html += slabel("FG Received at HD ("+str(len(fg_hd_t))+")")
+        html += picking_table_html(fg_hd_t)
+        html += slabel("Returns from Yamamah ("+str(len(ret_t))+")")
+        html += picking_table_html(ret_t,5)
+        html += slabel("Open Tasks ("+str(len(open_t))+")")
+        html += task_table_html(open_t)
+        html += slabel("Done this week ("+str(len(done_t))+")")
+        html += done_table_html(done_t)
+        st.markdown(card_wrap(html), unsafe_allow_html=True)
+
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+    # ── ROW 2: Procurement + Creative ───────────────────────────────────────
+    r2c1, r2c2 = st.columns(2)
+
+    with r2c1:
+        open_t, done_t = dept_tasks(4)
+        html = dept_header_html("🛒","Procurement & Supply Chain",len(open_t),len(done_t))
+        html += stat_row_html([("RFQs (wk)",len(rfqs_t),MUTED),("POs Confirmed",len(pos_t),AMBER),("RM Receipts",len(rm_r),OK_FG)])
+        if rfqs_t:
+            html += slabel("Open RFQs ("+str(len(rfqs_t))+")")
+            rows=""
+            for p in rfqs_t[:6]:
+                rows+=("<tr><td style='padding:4px 8px;font-size:12px;color:"+TEXT+"'>"+p["name"]+"</td>"
+                       "<td style='padding:4px;font-size:11px;color:"+MUTED+"'>"+(p["partner_id"][1][:22] if p["partner_id"] else "—")+"</td>"
+                       "<td style='padding:4px;font-size:10px;color:"+WARN_FG+";font-weight:500'>DRAFT</td></tr>")
+            html += "<table style='width:100%;border-collapse:collapse'><tbody>"+rows+"</tbody></table>"
+        if pos_t:
+            html += slabel("Confirmed POs ("+str(len(pos_t))+")")
+            rows=""
+            for p in pos_t[:6]:
+                rows+=("<tr><td style='padding:4px 8px;font-size:12px;color:"+TEXT+"'>"+p["name"]+"</td>"
+                       "<td style='padding:4px;font-size:11px;color:"+MUTED+"'>"+(p["partner_id"][1][:22] if p["partner_id"] else "—")+"</td>"
+                       "<td style='padding:4px;font-size:11px;color:"+OK_FG+";font-weight:500'>CONFIRMED</td></tr>")
+            html += "<table style='width:100%;border-collapse:collapse'><tbody>"+rows+"</tbody></table>"
+        html += slabel("Open Tasks ("+str(len(open_t))+")")
+        html += task_table_html(open_t)
+        html += slabel("Done this week ("+str(len(done_t))+")")
+        html += done_table_html(done_t)
+        st.markdown(card_wrap(html), unsafe_allow_html=True)
+
+    with r2c2:
+        open_t, done_t = dept_tasks(5)
+        videos = [t for t in done_w if t["project_id"] and t["project_id"][0]==5
+                  and any(kw in t["name"].lower() for kw in ["video","فيديو","reel","story","stories"])]
+        html = dept_header_html("🎬","Creative & Content",len(open_t),len(done_t))
+        html += stat_row_html([("Open Tasks",len(open_t),AMBER),("Done (wk)",len(done_t),OK_FG),("Videos/Reels",len(videos),MID)])
+        html += ('<div class="al al-i" style="margin-bottom:8px;font-size:11px">'
+                 'ℹ️ Live social media counts (Stories, Posts) need Buffer/Meta API — connect via n8n</div>')
+        html += slabel("Open Tasks ("+str(len(open_t))+")")
+        html += task_table_html(open_t)
+        html += slabel("Done this week ("+str(len(done_t))+")")
+        html += done_table_html(done_t)
+        st.markdown(card_wrap(html), unsafe_allow_html=True)
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+    # ── DAILY REPORT STATUS ─────────────────────────────────────────────────
+    st.markdown(
+        "<div style='font-weight:600;font-size:15px;margin-bottom:10px;color:"+TEXT+"'>📋 Daily Report Status</div>",
+        unsafe_allow_html=True)
+
+    daily_done_today = odoo("project.task","search_read",
+        [["name","ilike","تقرير"],["write_date",">=",today_s],["active","=",True]],
+        {"fields":["name","user_ids","write_date","state"],"limit":50})
+
+    DEPT_DR = {
+        "🏭 Production":    [18],
+        "📦 Operations":   [15,13],
+        "🛒 Procurement":  [29,27,9],
+        "🎬 Creative":     [11,31],
+        "💰 Finance":      [23],
+        "🛎 Cust. Service":[9,12,24,10],
+    }
+
+    dr_cols = st.columns(len(DEPT_DR))
+    for col,(dept_name,uids) in zip(dr_cols,DEPT_DR.items()):
+        sub_today = any(any(u in t["user_ids"] for u in uids)
+                        for t in daily_done_today if t["write_date"][:10]==today_s)
+        wk_count  = sum(1 for t in daily_done_today
+                        if any(u in t["user_ids"] for u in uids)
+                        and t["write_date"][:10]>=week_s)
+        bg = OK_BG if sub_today else CRIT_BG
+        fg = OK_FG if sub_today else CRIT_FG
+        icon = "✅" if sub_today else "⚠️"
+        col.markdown(
+            "<div style='background:"+bg+";border:0.5px solid "+fg+"44;border-radius:10px;"
+            "padding:12px;text-align:center'>"
+            "<div style='font-size:20px'>"+icon+"</div>"
+            "<div style='font-size:12px;font-weight:600;color:"+fg+";margin-top:4px'>"+dept_name+"</div>"
+            "<div style='font-size:10px;color:"+MUTED+";margin-top:4px'>"+str(wk_count)+"× this week</div>"
+            "</div>", unsafe_allow_html=True)
+
+
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <div style="margin-top:24px;padding:10px 0;border-top:1px solid {BORDER};
