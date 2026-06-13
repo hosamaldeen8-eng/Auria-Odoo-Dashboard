@@ -198,6 +198,83 @@ def fetch_meta_all():
     return dict(convos=convos_parsed,ads=ads_parsed,
                 sum_c=summary_convos,sum_a=summary_ads,daily=daily_list)
 
+
+@st.cache_data(ttl=30)
+def fetch_team(cache_key=None):
+    """Fetch all team management data per department."""
+    from datetime import date, timedelta
+    today = str(date.today())
+    week_start = str(date.today() - timedelta(days=date.today().weekday()))
+    week_ago   = str(date.today() - timedelta(days=7))
+
+    # ── Tasks ────────────────────────────────────────────────────────────
+    all_tasks = odoo("project.task","search_read",
+        [["active","=",True],["project_id","!=",False]],
+        {"fields":["name","stage_id","project_id","user_ids","state",
+                   "date_deadline","write_date","priority"],"limit":300})
+
+    done_week = odoo("project.task","search_read",
+        [["state","=","1_done"],["write_date",">=",week_start],["project_id","!=",False]],
+        {"fields":["name","project_id","user_ids","write_date"],"limit":200})
+
+    # Daily report tasks (stage 116)
+    daily_tasks = odoo("project.task","search_read",
+        [["active","=",True],["stage_id","=",116]],
+        {"fields":["name","user_ids","write_date","project_id"],"limit":50})
+
+    # ── Production ───────────────────────────────────────────────────────
+    mos = odoo("mrp.production","search_read",
+        [["state","not in",["cancel","draft"]]],
+        {"fields":["name","product_id","product_qty","qty_produced","state","date_start"],"limit":100})
+
+    # RM receipts this week (incoming to SJ/RM)
+    rm_receipts = odoo("stock.picking","search_read",
+        [["picking_type_id","in",[64,1]],["state","=","done"],["date",">=",week_ago]],
+        {"fields":["name","state","date","partner_id"],"limit":30})
+
+    # Internal transfers SJ FG → HD FG (picking type 57)
+    sj_hd = odoo("stock.picking","search_read",
+        [["picking_type_id","=",57],["date",">=",week_ago]],
+        {"fields":["name","state","date"],"limit":30})
+
+    # ── Operations ───────────────────────────────────────────────────────
+    # Sales validated this week
+    sales_week = odoo("sale.order","search_read",
+        [["state","in",["sale","done"]],["date_order",">=",week_ago]],
+        {"fields":["name","state","date_order","amount_total"],"limit":100})
+
+    # FG received in HD this week
+    fg_hd = odoo("stock.picking","search_read",
+        [["location_dest_id","in",[45,8]],["state","=","done"],["date",">=",week_ago]],
+        {"fields":["name","state","date","location_id"],"limit":30})
+
+    # Returns from Yamamah this week
+    returns = odoo("stock.picking","search_read",
+        [["picking_type_id","=",60],["date",">=",week_ago]],
+        {"fields":["name","state","date"],"limit":30})
+
+    # Deliveries to Yamamah
+    deliveries = odoo("stock.picking","search_read",
+        [["picking_type_id","in",[41,3]],["state","=","done"],["date",">=",week_ago]],
+        {"fields":["name","state","date"],"limit":30})
+
+    # ── Procurement ──────────────────────────────────────────────────────
+    rfqs = odoo("purchase.order","search_read",
+        [["state","in",["draft","sent"]],["date_order",">=",week_ago]],
+        {"fields":["name","partner_id","state","date_order"],"limit":30})
+
+    pos = odoo("purchase.order","search_read",
+        [["state","in",["purchase","done"]],["date_order",">=",week_ago]],
+        {"fields":["name","partner_id","state","date_order"],"limit":30})
+
+    return dict(
+        all_tasks=all_tasks, done_week=done_week, daily_tasks=daily_tasks,
+        mos=mos, rm_receipts=rm_receipts, sj_hd=sj_hd,
+        sales_week=sales_week, fg_hd=fg_hd, returns=returns, deliveries=deliveries,
+        rfqs=rfqs, pos=pos,
+        today=today, week_start=week_start
+    )
+
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Auria — Operations",page_icon="🌿",
                    layout="wide",initial_sidebar_state="collapsed")
@@ -268,6 +345,7 @@ with rt:
 with st.spinner("Fetching Odoo + Meta data…"):
     od=fetch_odoo(cache_key=str(date.today()))
     md=fetch_meta_all()
+    td=fetch_team(cache_key=str(date.today()))
 
 tasks=od["tasks"]; mos=od["mos"]; quants=od["quants"]; acct=od["acct"]
 overdue=od["overdue"]; projects=od["projects"]; sales=od["sales"]; today=od["today"]
@@ -294,7 +372,7 @@ def kpi(col,lbl,num,sub="",color=AMBER):
       <div class="kpi-sub">{sub}</div></div>""",unsafe_allow_html=True)
 
 # ════════════════ TABS ════════════════════════════════════════════════════════
-tab1,tab2,tab3=st.tabs(["📊  Operations","💰  Sales & Team","📣  Marketing & Inbox"])
+tab1,tab2,tab3,tab4=st.tabs(["📊  Operations","💰  Sales & Salespersons","📣  Marketing & Inbox","👥  Team Management"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — OPERATIONS
