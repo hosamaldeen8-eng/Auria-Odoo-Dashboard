@@ -56,8 +56,9 @@ def get_page_token():
 def fetch_odoo(cache_key=None):
     today=cache_key or str(date.today())
     thirty_ago=str(date.today()-timedelta(days=30))
-    tasks=odoo("project.task","search_read",[["active","=",True]],
-        {"fields":["name","project_id","user_ids","priority","date_deadline","stage_id"],"limit":300})
+    tasks=odoo("project.task","search_read",
+        [["active","=",True],["state","not in",["1_done","1_canceled"]]],
+        {"fields":["name","project_id","user_ids","priority","date_deadline","stage_id","state"],"limit":300})
     mos=odoo("mrp.production","search_read",[["state","in",["confirmed","progress"]]],
         {"fields":["name","product_id","product_qty","state"],"limit":50})
     quants=odoo("stock.quant","search_read",
