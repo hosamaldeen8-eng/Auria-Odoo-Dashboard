@@ -69,9 +69,11 @@ def fetch_odoo(cache_key=None):
           "11040500","11040800","11040900","11060000","51010000"]],
          ["move_id.state","=","posted"]],
         {"fields":["account_id","balance:sum"],"groupby":["account_id"]})
+    # Filter by Odoo's built-in state: 1_done and 1_canceled = closed
     overdue=odoo("project.task","search_read",
-        [["date_deadline","<",today],["active","=",True],["stage_id","not in",DONE_STAGES]],
-        {"fields":["name","project_id","user_ids","date_deadline","priority","stage_id"],"limit":100})
+        [["date_deadline","<",today],["active","=",True],
+         ["state","not in",["1_done","1_canceled"]]],
+        {"fields":["name","project_id","user_ids","date_deadline","priority","stage_id","state"],"limit":100})
     projects=odoo("project.project","search_read",[],{"fields":["id","name","task_count"]})
     sales=odoo("sale.order","search_read",
         [["state","in",["sale","done"]],["date_order",">=",thirty_ago]],
