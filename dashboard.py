@@ -1283,6 +1283,347 @@ with tab4:
     st.markdown(_mh, unsafe_allow_html=True)
 
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — DAILY REPORT SUMMARY (AI-powered)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab5:
+    import re as _re
+    from datetime import timedelta as _td5
+
+    today_dt5 = date.today()
+    mon_dt5   = today_dt5 - _td5(days=today_dt5.weekday())
+    mon_s5    = str(mon_dt5)
+    today_s5  = str(today_dt5)
+
+    U5 = {8:"Hussam",18:"Abdullah",29:"Ala' Deep",9:"Alaa Oshah",
+          15:"Marwan",13:"Nasser",27:"Khan",11:"Wesal",23:"Bader",
+          6:"Moad",31:"Weam",30:"Wegdan",24:"Amal",12:"Wala",10:"Znjabel"}
+
+    def _strip_html(html):
+        if not html: return ""
+        t = _re.sub(r'<br\s*/?>', '\n', html or "")
+        t = _re.sub(r'</p>', '\n', t)
+        t = _re.sub(r'<[^>]+>', '', t)
+        t = _re.sub(r'[ \t]+', ' ', t)
+        t = _re.sub(r'\n{3,}', '\n\n', t)
+        return t.strip()
+
+    @st.cache_data(ttl=120)
+    def fetch_daily_data(ck=None):
+        thirty = str(date.today() - _td5(days=30))
+        # All daily report tasks
+        daily_tasks = odoo("project.task","search_read",
+            [["active","=",True],
+             "|",["name","ilike","التقرير اليومي"],["name","ilike","تقرير يومي"]],
+            {"fields":["id","name","project_id","user_ids","state","write_date"],"limit":50})
+        task_ids = [t["id"] for t in daily_tasks]
+
+        # All messages on those tasks last 30 days
+        msgs = odoo("mail.message","search_read",
+            [["res_id","in",task_ids],["model","=","project.task"],
+             ["message_type","in",["comment","email"]],["date",">=",thirty]],
+            {"fields":["res_id","body","date","author_id"],"limit":300})
+
+        return {"tasks": daily_tasks, "msgs": msgs, "task_ids": task_ids}
+
+    st.markdown(
+        f"<p style='font-size:12px;color:{MUTED};text-transform:uppercase;"
+        f"letter-spacing:.06em;margin-bottom:14px'>"
+        f"Daily Report Intelligence — Week of {mon_dt5.strftime('%d %b')} → {today_dt5.strftime('%d %b %Y')}</p>",
+        unsafe_allow_html=True)
+
+    # Date range selector
+    dr_col1, dr_col2, dr_col3 = st.columns([1,1,3])
+    with dr_col1:
+        range_opt = st.selectbox("Period",["This week","Yesterday","Last 7 days","Last 30 days"],
+                                 label_visibility="collapsed")
+    with dr_col2:
+        if st.button("🔄 Refresh data"):
+            st.cache_data.clear(); st.rerun()
+
+    range_map = {
+        "This week":   mon_s5,
+        "Yesterday":   str(today_dt5 - _td5(days=1)),
+        "Last 7 days": str(today_dt5 - _td5(days=7)),
+        "Last 30 days":str(today_dt5 - _td5(days=30)),
+    }
+    since = range_map[range_opt]
+
+    with st.spinner("Loading reports…"):
+        dd = fetch_daily_data(ck=str(date.today()))
+
+    daily_tasks = dd["tasks"]
+    all_msgs    = dd["msgs"]
+    task_map5   = {t["id"]: t for t in daily_tasks}
+
+    # Filter messages by selected period
+    period_msgs = [m for m in all_msgs if m["date"][:10] >= since]
+
+    # Build per-member data
+    members = {}
+    for task in daily_tasks:
+        proj = task["project_id"][1]
+        for uid in (task["user_ids"] or []):
+            uname = U5.get(uid, str(uid))
+            if uname not in members:
+                members[uname] = {
+                    "uid": uid, "project": proj,
+                    "task_id": task["id"], "task_state": task["state"],
+                    "msgs": [], "last_update": task.get("write_date","")[:10]
+                }
+
+    # Attach messages to members
+    for msg in all_msgs:
+        if not msg.get("author_id"): continue
+        author_name = msg["author_id"][1]
+        body = _strip_html(msg.get("body",""))
+        if not body or len(body.strip()) < 3: continue
+        date_str = msg["date"][:10]
+        if date_str < since: continue
+        # Match to member by name (partial)
+        matched = None
+        for mname in members:
+            if mname.lower() in author_name.lower() or author_name.lower() in mname.lower():
+                matched = mname; break
+        # Also match by task
+        if not matched:
+            task = task_map5.get(msg["res_id"],{})
+            for uid in (task.get("user_ids") or []):
+                uname = U5.get(uid)
+                if uname and uname in members:
+                    matched = uname; break
+        if matched:
+            members[matched]["msgs"].append({"date": date_str, "body": body})
+
+    # ── Submission overview ─────────────────────────────────────────
+    submitted = [k for k,v in members.items() if v["msgs"]]
+    pending   = [k for k,v in members.items() if not v["msgs"]]
+    total_m   = len(members)
+
+    # KPI row
+    mk = st.columns(4)
+    def _mk(col, lbl, val, color):
+        col.markdown(
+            f'<div class="kpi" style="height:75px"><div class="kpi-lbl">{lbl}</div>'
+            f'<div class="kpi-num" style="color:{color};font-size:22px">{val}</div></div>',
+            unsafe_allow_html=True)
+    _mk(mk[0],"Team Members",    str(total_m),       MUTED)
+    _mk(mk[1],"Submitted",       str(len(submitted)),OK_FG)
+    _mk(mk[2],"No Report",       str(len(pending)),  CRIT_FG if pending else OK_FG)
+    _mk(mk[3],"Completion Rate", f"{round(len(submitted)/total_m*100) if total_m else 0}%",
+        OK_FG if len(submitted)/total_m>=0.8 else WARN_FG if total_m else MUTED)
+
+    st.markdown(f"<hr style='border-color:{BORDER};margin:14px 0'>", unsafe_allow_html=True)
+
+    # ── Missing reports alert ───────────────────────────────────────
+    if pending:
+        pnames = ", ".join(pending)
+        st.markdown(
+            f'<div class="al al-c">🔴 <span><b>No report submitted</b> this period: {pnames}</span></div>',
+            unsafe_allow_html=True)
+
+    # ── AI Summary ─────────────────────────────────────────────────
+    st.markdown(
+        f"<p style='font-weight:600;font-size:14px;margin-bottom:10px'>🤖 AI Summary</p>",
+        unsafe_allow_html=True)
+
+    # Build context for Claude
+    report_context = []
+    for mname, md5 in members.items():
+        if md5["msgs"]:
+            entries = "\n".join(
+                f"[{msg['date']}] {msg['body'][:300]}"
+                for msg in sorted(md5["msgs"], key=lambda x: x["date"]))
+            report_context.append(f"**{mname} ({md5['project']}):**\n{entries}")
+
+    if not report_context:
+        st.markdown(
+            f'<div class="al al-w">⚠️ <span>No report messages found for the selected period. '
+            f'Team members should submit their daily reports as Log Notes on their daily report tasks in Odoo.</span></div>',
+            unsafe_allow_html=True)
+    else:
+        context_text = "\n\n".join(report_context)
+        missing_text = f"No report: {', '.join(pending)}" if pending else "All members reported."
+
+        ai_prompt = f"""You are the operations assistant for Auria, a Libyan natural haircare brand.
+Below are the daily report messages submitted by the team in Odoo this period ({since} to {today_s5}).
+
+{context_text}
+
+{missing_text}
+
+Write a concise management summary in English with these sections:
+1. **Overall Status** — 2-3 sentences on team activity level
+2. **Key Achievements** — bullet list of concrete things done
+3. **Challenges & Blockers** — issues flagged by the team
+4. **Pending & Follow-up** — what needs management attention
+5. **Missing Reports** — who hasn't submitted (be direct)
+
+Be decisive and specific. Use the actual names and details from the messages. Keep it under 300 words."""
+
+        # Session state for AI summary
+        if "dr_summary" not in st.session_state:
+            st.session_state.dr_summary = None
+            st.session_state.dr_summary_period = None
+
+        col_gen, col_clear = st.columns([1,5])
+        with col_gen:
+            gen_btn = st.button("✨ Generate Summary", type="primary")
+        with col_clear:
+            if st.session_state.dr_summary:
+                if st.button("🗑 Clear"):
+                    st.session_state.dr_summary = None
+                    st.rerun()
+
+        if gen_btn:
+            with st.spinner("Claude is reading the reports…"):
+                import urllib.request as _ur2
+                import json as _j2
+                try:
+                    resp = _ur2.urlopen(
+                        _ur2.Request(
+                            "https://api.anthropic.com/v1/messages",
+                            data=_j2.dumps({
+                                "model": "claude-sonnet-4-6",
+                                "max_tokens": 1000,
+                                "messages": [{"role":"user","content": ai_prompt}]
+                            }).encode(),
+                            headers={
+                                "content-type": "application/json",
+                                "anthropic-version": "2023-06-01"
+                            },
+                            method="POST"
+                        ), timeout=30)
+                    result = _j2.loads(resp.read())
+                    st.session_state.dr_summary = result["content"][0]["text"]
+                    st.session_state.dr_summary_period = range_opt
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"AI error: {e}")
+
+        if st.session_state.dr_summary:
+            st.markdown(
+                f'<div style="background:{BG2};border:0.5px solid {BORDER};border-left:3px solid {AMBER};'
+                f'border-radius:8px;padding:16px;margin-top:8px;font-size:13px;color:{TEXT};line-height:1.7">'
+                f'{st.session_state.dr_summary.replace(chr(10),"<br>").replace("**","<b>",1)}</div>',
+                unsafe_allow_html=True)
+
+    st.markdown(f"<hr style='border-color:{BORDER};margin:16px 0'>", unsafe_allow_html=True)
+
+    # ── Per-member report cards ─────────────────────────────────────
+    st.markdown(
+        f"<p style='font-weight:600;font-size:14px;margin-bottom:12px'>📋 Individual Reports</p>",
+        unsafe_allow_html=True)
+
+    # Group by project
+    by_proj5 = {}
+    for mname, md5 in members.items():
+        by_proj5.setdefault(md5["project"], []).append((mname, md5))
+
+    PROJ_COLORS = {
+        "Production Operations": AMBER,
+        "Operations & Facilities": MID,
+        "Procurement & Supply Chain": INFO_FG,
+        "Creative & Content": "#c97bc9",
+        "Customer Service": "#5b9bd5",
+        "Financial management": WARN_FG,
+        "Management & Strategic": MUTED,
+    }
+
+    STATE_DR = {
+        "1_done":"✅ Submitted","03_approved":"🟢 Approved",
+        "01_in_progress":"🟡 Pending","1_canceled":"❌ Cancelled",
+    }
+
+    for proj, member_list in sorted(by_proj5.items()):
+        color = PROJ_COLORS.get(proj, MUTED)
+        st.markdown(
+            f'<div style="font-size:11px;font-weight:600;color:{color};text-transform:uppercase;'
+            f'letter-spacing:.07em;margin:12px 0 8px;padding-left:4px;border-left:3px solid {color};padding-left:8px">'
+            f'{proj}</div>',
+            unsafe_allow_html=True)
+
+        cols5 = st.columns(min(len(member_list), 3))
+        for i, (mname, md5) in enumerate(member_list):
+            col = cols5[i % 3]
+            has_reports = bool(md5["msgs"])
+            state_lbl = STATE_DR.get(md5["task_state"],"⚪ Unknown")
+
+            # Latest message
+            latest = ""
+            all_entries = ""
+            if md5["msgs"]:
+                sorted_msgs5 = sorted(md5["msgs"], key=lambda x: x["date"], reverse=True)
+                latest = sorted_msgs5[0]["body"][:200]
+                all_entries = "\n\n".join(
+                    f'<div style="border-bottom:0.5px solid {BORDER};padding:6px 0">'
+                    f'<div style="font-size:10px;color:{MUTED};margin-bottom:3px">{msg["date"]}</div>'
+                    f'<div style="font-size:12px;color:{TEXT};white-space:pre-wrap;line-height:1.5">{msg["body"][:300]}</div>'
+                    f'</div>'
+                    for msg in sorted_msgs5[:5])
+
+            card_border = color if has_reports else CRIT_BD
+            card_bg     = CARD
+
+            expander_label = f"{mname} — {len(md5['msgs'])} report{'s' if len(md5['msgs'])!=1 else ''}"
+            with col.expander(expander_label, expanded=False):
+                st.markdown(
+                    f'<div style="background:{card_bg};border-radius:8px">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                    f'padding:4px 0 8px;border-bottom:0.5px solid {BORDER};margin-bottom:8px">'
+                    f'<span style="font-size:11px;color:{MUTED}">Task status</span>'
+                    f'<span style="font-size:11px;color:{color}">{state_lbl}</span>'
+                    f'</div>'
+                    f'<div style="font-size:11px;color:{MUTED};margin-bottom:4px">Last updated: {md5["last_update"]}</div>'
+                    + (all_entries if all_entries else
+                       f'<div style="font-size:12px;color:{CRIT_FG};padding:8px 0">🔴 No report submitted this period</div>')
+                    + '</div>',
+                    unsafe_allow_html=True)
+
+    # ── Submission history chart ────────────────────────────────────
+    st.markdown(f"<hr style='border-color:{BORDER};margin:16px 0'>", unsafe_allow_html=True)
+    st.markdown(
+        f"<p style='font-weight:600;font-size:14px;margin-bottom:10px'>📅 Submission History — Last 30 Days</p>",
+        unsafe_allow_html=True)
+
+    # Build date x member heatmap data
+    all_dates = sorted(set(m["date"][:10] for m in all_msgs if m.get("date")))[-14:]
+    member_names5 = list(members.keys())
+
+    heat_data = []
+    for mname in member_names5:
+        row = {"Member": mname}
+        member_dates = set(msg["date"] for msg in members[mname]["msgs"])
+        for d in all_dates:
+            row[d] = 1 if d in member_dates else 0
+        heat_data.append(row)
+
+    if heat_data and all_dates:
+        df_heat = pd.DataFrame(heat_data).set_index("Member")
+        fig_heat = go.Figure(data=go.Heatmap(
+            z=df_heat.values,
+            x=[d[5:] for d in df_heat.columns],  # MM-DD
+            y=df_heat.index.tolist(),
+            colorscale=[[0,"#1e2e1f"],[1,"#3B6D11"]],
+            showscale=False,
+            text=[["✅" if v else "—" for v in row] for row in df_heat.values],
+            texttemplate="%{text}",
+            hovertemplate="<b>%{y}</b><br>%{x}<br>%{text}<extra></extra>",
+            xgap=3, ygap=3
+        ))
+        fig_heat.update_layout(
+            margin=dict(l=0,r=0,t=10,b=0), height=max(200, len(member_names5)*32+40),
+            plot_bgcolor=PLOT_BG, paper_bgcolor=PLOT_BG, font_color=TEXT)
+        fig_heat.update_xaxes(side="top", gridcolor=BORDER, tickfont=dict(size=10))
+        fig_heat.update_yaxes(gridcolor=BORDER, tickfont=dict(size=11))
+        st.plotly_chart(fig_heat, use_container_width=True)
+    else:
+        st.markdown(
+            f'<div class="al al-w">⚠️ No submission history to display for this period.</div>',
+            unsafe_allow_html=True)
+
+
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <div style="margin-top:24px;padding:10px 0;border-top:1px solid {BORDER};
