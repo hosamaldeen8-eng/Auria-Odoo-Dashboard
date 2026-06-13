@@ -24,7 +24,7 @@ INFO_BG="#0e1e2e";INFO_FG="#80b8f0";INFO_BD="#2d6fa8"
 LOC_NAMES={37:"SJ/RM-Raw",38:"SJ/PKG",39:"SJ/RTF",55:"SJ/FG",45:"HD/FG"}
 USER_NAMES={8:"Hussam",18:"Abdullah",29:"Ala' Deep",9:"Alaa Oshah",
             15:"Marwan",13:"Nasser",27:"Khan",11:"Wesal",23:"Bader",6:"Moad"}
-DONE_STAGES=[14,15,28,29,41,66,68,70,74,75,79,83]
+DONE_STAGES=[14,15,28,29,41,66,68,69,70,74,75,79,83,116,159]  # +69=InTransit, +116=DailyReport, +159=D0NE
 
 # ── Odoo ──────────────────────────────────────────────────────────────────────
 @st.cache_resource
