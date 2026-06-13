@@ -372,7 +372,7 @@ def kpi(col,lbl,num,sub="",color=AMBER):
       <div class="kpi-sub">{sub}</div></div>""",unsafe_allow_html=True)
 
 # ════════════════ TABS ════════════════════════════════════════════════════════
-tab1,tab2,tab3,tab4=st.tabs(["📊  Operations","💰  Sales & Salespersons","📣  Marketing & Inbox","👥  Team Management"])
+tab1,tab2,tab3,tab4,tab5=st.tabs(["📊  Operations","💰  Sales & Team","📣  Marketing & Inbox","👥  Team","📝  Daily Reports"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — OPERATIONS
