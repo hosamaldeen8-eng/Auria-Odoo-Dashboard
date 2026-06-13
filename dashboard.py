@@ -969,6 +969,320 @@ with tab4:
             "</div>", unsafe_allow_html=True)
 
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — TEAM & DEPARTMENTS
+# ══════════════════════════════════════════════════════════════════════════════
+with tab4:
+    from datetime import timedelta as _td
+    today_dt = date.today()
+    mon_dt   = today_dt - _td(days=today_dt.weekday())
+    today_s  = str(today_dt)
+    mon_s    = str(mon_dt)
+
+    U = {8:"Hussam",18:"Abdullah",29:"Ala' Deep",9:"Alaa Oshah",
+         15:"Marwan",13:"Nasser",27:"Khan",11:"Wesal",23:"Bader",
+         6:"Moad",31:"Weam",30:"Wegdan",24:"Amal",12:"Wala",10:"Znjabel"}
+
+    STATE_IC = {"01_in_progress":"🔵","02_changes_requested":"🟡",
+                "03_approved":"🟢","1_done":"✅","1_canceled":"❌","04_waiting_normal":"⏳"}
+    STATE_LB = {"01_in_progress":"In Progress","02_changes_requested":"Changes Req.",
+                "03_approved":"Approved","1_done":"Done","1_canceled":"Cancelled",
+                "04_waiting_normal":"Waiting"}
+
+    @st.cache_data(ttl=60)
+    def fetch_team(ck=None):
+        _mon = str(date.today() - _td(days=date.today().weekday()))
+        at = odoo("project.task","search_read",
+            [["active","=",True],["project_id","!=",False]],
+            {"fields":["name","project_id","user_ids","state","date_deadline",
+                       "stage_id","write_date","priority"],"limit":500})
+        ma = odoo("mrp.production","search_read",
+            [["state","not in",["cancel","draft"]]],
+            {"fields":["name","product_id","product_qty","qty_produced","state",
+                       "date_start","date_finished"],"limit":200})
+        tr = odoo("stock.picking","search_read",
+            [["state","=","done"],["picking_type_code","=","internal"],["date_done",">=",_mon]],
+            {"fields":["name","date_done","location_id","location_dest_id"],"limit":100})
+        rm = odoo("stock.picking","search_read",
+            [["state","=","done"],["picking_type_code","=","incoming"],["date_done",">=",_mon]],
+            {"fields":["name","partner_id","date_done"],"limit":100})
+        dv = odoo("stock.picking","search_read",
+            [["state","=","done"],["picking_type_code","=","outgoing"],["date_done",">=",_mon]],
+            {"fields":["name","partner_id","date_done"],"limit":200})
+        fg = odoo("stock.move","search_read",
+            [["state","=","done"],["location_dest_id","=",45],["date",">=",_mon]],
+            {"fields":["product_id","quantity","date"],"limit":100})
+        rt = odoo("stock.picking","search_read",
+            [["state","=","done"],["location_id","=",44],["date_done",">=",_mon]],
+            {"fields":["name","date_done"],"limit":50})
+        rq = odoo("purchase.order","search_read",
+            [["state","in",["draft","sent"]]],
+            {"fields":["name","partner_id","state","date_order"],"limit":100})
+        po = odoo("purchase.order","search_read",
+            [["state","in",["purchase","done"]],["date_approve",">=",_mon]],
+            {"fields":["name","partner_id","state","date_approve"],"limit":50})
+        return dict(at=at,ma=ma,tr=tr,rm=rm,dv=dv,fg=fg,rt=rt,rq=rq,po=po)
+
+    with st.spinner("Loading team data…"):
+        td4 = fetch_team(ck=str(date.today()))
+
+    _at = td4["at"]
+
+    def _dept(pid):   return [t for t in _at if t["project_id"][0]==pid]
+    def _real(ts):    return [t for t in ts if "التقرير اليومي" not in t["name"] and "تقرير يومي" not in t["name"]]
+    def _open(ts):    return [t for t in _real(ts) if t["state"] not in ("1_done","1_canceled")]
+    def _done_wk(ts): return [t for t in _real(ts) if t["state"]=="1_done" and t.get("write_date","")[:10]>=mon_s]
+    def _over(ts):    return [t for t in _open(ts) if t.get("date_deadline") and t["date_deadline"][:10]<today_s]
+    def _daily(ts):   return [t for t in ts if "التقرير اليومي" in t["name"] or "تقرير يومي" in t["name"]]
+
+    def _sbadge(state):
+        bg = {"1_done":OK_BG,"01_in_progress":INFO_BG,"03_approved":OK_BG,
+              "02_changes_requested":WARN_BG,"1_canceled":CRIT_BG,"04_waiting_normal":BG2}.get(state,BG2)
+        fg_c = {"1_done":OK_FG,"01_in_progress":INFO_FG,"03_approved":OK_FG,
+                "02_changes_requested":WARN_FG,"1_canceled":CRIT_FG,"04_waiting_normal":MUTED}.get(state,MUTED)
+        return f'<span style="background:{bg};color:{fg_c};padding:2px 7px;border-radius:10px;font-size:10px;white-space:nowrap">{STATE_IC.get(state,"⚪")} {STATE_LB.get(state,state)}</span>'
+
+    def _dbadge(state):
+        if state=="1_done":      return f'<span style="background:{OK_BG};color:{OK_FG};padding:2px 7px;border-radius:10px;font-size:10px">✅ Submitted</span>'
+        if state=="03_approved": return f'<span style="background:{OK_BG};color:{OK_FG};padding:2px 7px;border-radius:10px;font-size:10px">🟢 Approved</span>'
+        if state=="01_in_progress": return f'<span style="background:{WARN_BG};color:{WARN_FG};padding:2px 7px;border-radius:10px;font-size:10px">🟡 Pending</span>'
+        return f'<span style="background:{CRIT_BG};color:{CRIT_FG};padding:2px 7px;border-radius:10px;font-size:10px">🔴 Missing</span>'
+
+    def dept_card(title, icon, pid, color, metrics_html):
+        ts     = _dept(pid)
+        open_  = _open(ts)
+        done_  = _done_wk(ts)
+        over_  = _over(ts)
+        daily_ = _daily(ts)
+
+        # open tasks rows
+        open_rows = ""
+        for t in sorted(open_, key=lambda x:(x.get("date_deadline") or "9999"))[:8]:
+            users = [U.get(u,str(u)) for u in (t["user_ids"] or [])][:2]
+            dl    = (t.get("date_deadline") or "")[:10]
+            is_od = dl and dl<today_s
+            dl_span = f'<span style="font-size:10px;color:{"#f4a0a0" if is_od else MUTED};margin-right:4px">{dl}</span>' if dl else ""
+            dots = "".join(
+                f'<span style="background:{color};color:#fff;border-radius:50%;'
+                f'width:18px;height:18px;font-size:9px;display:inline-flex;'
+                f'align-items:center;justify-content:center;margin-left:2px">{u[0]}</span>'
+                for u in users)
+            open_rows += (
+                f'<div style="display:flex;align-items:center;gap:6px;padding:4px 0;'
+                f'border-bottom:0.5px solid {BORDER}">'
+                f'<div style="flex:1;font-size:12px;color:{TEXT};line-height:1.3">{t["name"][:44]}</div>'
+                f'<div style="display:flex;align-items:center;gap:3px;flex-shrink:0">'
+                f'{dl_span}{dots}{_sbadge(t["state"])}</div></div>')
+
+        # done rows
+        done_rows = ""
+        for t in done_[:5]:
+            user = U.get((t["user_ids"] or [None])[0],"—") if t["user_ids"] else "—"
+            done_rows += (
+                f'<div style="display:flex;gap:6px;padding:3px 0;border-bottom:0.5px solid {BORDER};align-items:center">'
+                f'<span style="color:{OK_FG};font-size:11px">✅</span>'
+                f'<span style="font-size:11px;color:{MUTED};flex:1">{t["name"][:40]}</span>'
+                f'<span style="font-size:10px;color:{MUTED}">{user}</span></div>')
+
+        # daily report rows
+        daily_rows = ""
+        for dr in daily_:
+            users = [U.get(u,str(u)) for u in (dr["user_ids"] or [])]
+            daily_rows += (
+                f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                f'padding:4px 0;border-bottom:0.5px solid {BORDER}">'
+                f'<span style="font-size:12px;color:{TEXT}">{", ".join(users) or "—"}</span>'
+                f'{_dbadge(dr["state"])}</div>')
+
+        no_open  = f'<div style="font-size:11px;color:{OK_FG};padding:6px 0">🎉 All clear</div>'
+        no_done  = f'<div style="font-size:11px;color:{MUTED}">None yet this week</div>'
+        no_daily = f'<div style="font-size:11px;color:{MUTED}">Not tracked</div>'
+
+        st.markdown(
+            f'<div style="background:{CARD};border:0.5px solid {BORDER};border-top:3px solid {color};'
+            f'border-radius:12px;padding:16px;margin-bottom:14px">'
+
+            # header
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+            f'<div style="font-size:16px;font-weight:600;color:{TEXT}">{icon} {title}</div>'
+            f'<div style="display:flex;gap:8px">'
+            f'<div style="text-align:center;background:{BG2};border-radius:8px;padding:4px 10px">'
+            f'<div style="font-size:18px;font-weight:600;color:{color}">{len(open_)}</div>'
+            f'<div style="font-size:10px;color:{MUTED}">Open</div></div>'
+            f'<div style="text-align:center;background:{BG2};border-radius:8px;padding:4px 10px">'
+            f'<div style="font-size:18px;font-weight:600;color:{OK_FG}">{len(done_)}</div>'
+            f'<div style="font-size:10px;color:{MUTED}">Done/wk</div></div>'
+            f'<div style="text-align:center;background:{BG2};border-radius:8px;padding:4px 10px">'
+            f'<div style="font-size:18px;font-weight:600;color:{"#f4a0a0" if over_ else OK_FG}">{len(over_)}</div>'
+            f'<div style="font-size:10px;color:{MUTED}">Overdue</div></div>'
+            f'</div></div>'
+
+            # metrics
+            f'{metrics_html}'
+
+            # two columns
+            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px">'
+
+            # left: open tasks
+            f'<div><div style="font-size:10px;font-weight:500;color:{MUTED};text-transform:uppercase;'
+            f'letter-spacing:.07em;margin-bottom:6px">Open Tasks</div>'
+            f'{open_rows or no_open}</div>'
+
+            # right: daily + done
+            f'<div><div style="font-size:10px;font-weight:500;color:{MUTED};text-transform:uppercase;'
+            f'letter-spacing:.07em;margin-bottom:6px">Today\'s Report</div>'
+            f'{daily_rows or no_daily}'
+            f'<div style="font-size:10px;font-weight:500;color:{MUTED};text-transform:uppercase;'
+            f'letter-spacing:.07em;margin:10px 0 6px">Completed This Week</div>'
+            f'{done_rows or no_done}</div>'
+
+            f'</div></div>',
+            unsafe_allow_html=True)
+
+    # ── PRODUCTION ──────────────────────────────────────────────────
+    _ma  = td4["ma"]
+    _mo_active = [m for m in _ma if m["state"] in ("confirmed","progress")]
+    _mo_done   = [m for m in _ma if m["state"]=="done" and (m.get("date_finished") or "")[:10]>=mon_s]
+    _rm_n = len(td4["rm"])
+    _tr_hd= [t for t in td4["tr"] if "HD" in (t["location_dest_id"][1] if t["location_dest_id"] else "") or "Alyamama" in (t["location_dest_id"][1] if t["location_dest_id"] else "")]
+
+    mo_metrics = (
+        f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px">'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{AMBER}">{len(_mo_active)}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Active MOs</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{OK_FG}">{len(_mo_done)}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">MOs Done/wk</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{MID}">{_rm_n}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">RM Received/wk</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{INFO_FG}">{len(_tr_hd)}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Transfers SJ→HD</div></div></div>'
+        + (f'<div style="font-size:10px;color:{MUTED};margin-top:2px">' +
+           "  ·  ".join(f"{m['name']} {m['product_id'][1][:18]} ({m['qty_produced']:.0f}/{m['product_qty']:.0f})" for m in _mo_active[:4]) +
+           '</div>' if _mo_active else ""))
+
+    dept_card("Production Operations","🏭",3,AMBER,mo_metrics)
+
+    # ── OPERATIONS ──────────────────────────────────────────────────
+    ops_metrics = (
+        f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px">'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{MID}">{len(td4["dv"])}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Sales Shipped/wk</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{OK_FG}">{len(td4["fg"])}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">FG Moves→HD/wk</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{WARN_FG}">{len(td4["rt"])}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Returns/Yamamah</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{INFO_FG}">{len(td4["tr"])}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Internal Transfers</div></div></div>')
+
+    dept_card("Operations & Facilities","⚙️",7,MID,ops_metrics)
+
+    # ── PROCUREMENT ─────────────────────────────────────────────────
+    _rq = td4["rq"]; _po = td4["po"]
+    _draft = sum(1 for r in _rq if r["state"]=="draft")
+    proc_metrics = (
+        f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px">'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{WARN_FG}">{len(_rq)}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Open RFQs</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{AMBER}">{_draft}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Draft RFQs</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{OK_FG}">{len(_po)}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">POs Confirmed/wk</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{MID}">{_rm_n}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">RM Received/wk</div></div></div>'
+        + (f'<div style="font-size:10px;color:{MUTED};margin-top:2px">' +
+           "  ·  ".join(f"{r['name']} {(r['partner_id'][1] if r['partner_id'] else '—')[:18]}" for r in _rq[:6]) +
+           '</div>' if _rq else ""))
+
+    dept_card("Procurement & Supply Chain","📦",4,INFO_FG,proc_metrics)
+
+    # ── CREATIVE ────────────────────────────────────────────────────
+    cr_metrics = (
+        f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px">'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:#c97bc9">—</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Active Sponsors</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{MID}">—</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Videos Posted</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{INFO_FG}">—</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Stories Posted</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{AMBER}">—</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Posts Scheduled</div></div></div>'
+        f'<div style="font-size:10px;color:{MUTED};font-style:italic">⚡ Buffer / Meta API integration coming soon</div>')
+
+    dept_card("Creative & Content","🎨",5,"#c97bc9",cr_metrics)
+
+    # ── CUSTOMER SERVICE ────────────────────────────────────────────
+    _sc = {}
+    try: _sc = md.get("sum_c",{}) if "md" in dir() else {}
+    except: pass
+    cs_metrics = (
+        f'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px">'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{AMBER}">{_sc.get("total_rcvd","—")}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Messages Received</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{MID}">{_sc.get("avg_resp","—")}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Avg Response (min)</div></div>'
+        f'<div style="background:{BG2};border-radius:8px;padding:8px;text-align:center">'
+        f'<div style="font-size:20px;font-weight:600;color:{OK_FG}">{total_ords if "total_ords" in dir() else "—"}</div>'
+        f'<div style="font-size:10px;color:{MUTED}">Orders This Month</div></div></div>')
+
+    dept_card("Customer Service","💬",6,"#5b9bd5",cs_metrics)
+
+    # ── WEEK DAILY REPORT SUMMARY ────────────────────────────────────
+    st.markdown(f"<hr style='border-color:{BORDER};margin:4px 0 14px'>", unsafe_allow_html=True)
+    st.markdown(
+        f"<p style='font-size:11px;color:{MUTED};text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px'>"
+        f"Week {mon_dt.strftime('%d %b')} → {today_dt.strftime('%d %b %Y')} — Daily Report Status</p>",
+        unsafe_allow_html=True)
+
+    _all_dr  = [t for t in _at if "التقرير اليومي" in t["name"] or "تقرير يومي" in t["name"]]
+    _dr_done = sum(1 for t in _all_dr if t["state"] in ("1_done","03_approved"))
+    _dr_pend = sum(1 for t in _all_dr if t["state"]=="01_in_progress")
+    _dr_tot  = len(_all_dr)
+    _dr_rate = round(_dr_done/_dr_tot*100) if _dr_tot else 0
+
+    wc = st.columns(4)
+    def _wkpi(col,lbl,val,color):
+        col.markdown(
+            f'<div class="kpi" style="height:70px"><div class="kpi-lbl">{lbl}</div>'
+            f'<div class="kpi-num" style="color:{color};font-size:22px">{val}</div></div>',
+            unsafe_allow_html=True)
+    _wkpi(wc[0],"Total Members",str(_dr_tot),MUTED)
+    _wkpi(wc[1],"Submitted / Approved",str(_dr_done),OK_FG)
+    _wkpi(wc[2],"Pending Today",str(_dr_pend),WARN_FG if _dr_pend else OK_FG)
+    _wkpi(wc[3],"Submission Rate",f"{_dr_rate}%",OK_FG if _dr_rate>=80 else WARN_FG if _dr_rate>=50 else CRIT_FG)
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    _mh = f'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">'
+    for t in sorted(_all_dr, key=lambda x:x["project_id"][1]):
+        _users = [U.get(u,str(u)) for u in (t["user_ids"] or [])]
+        _proj  = t["project_id"][1].replace(" & Content","").replace(" & Supply Chain","").replace(" & Facilities","").replace(" & Strategic","")
+        _mh += (
+            f'<div style="background:{CARD};border:0.5px solid {BORDER};border-radius:8px;padding:8px 12px;min-width:150px">'
+            f'<div style="font-size:10px;color:{MUTED};margin-bottom:3px">{_proj}</div>'
+            f'<div style="font-size:13px;font-weight:500;color:{TEXT};margin-bottom:5px">{", ".join(_users) or "—"}</div>'
+            f'{_dbadge(t["state"])}</div>')
+    _mh += '</div>'
+    st.markdown(_mh, unsafe_allow_html=True)
+
+
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <div style="margin-top:24px;padding:10px 0;border-top:1px solid {BORDER};
