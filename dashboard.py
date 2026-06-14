@@ -10,7 +10,7 @@ ODOO_URL  = "https://odoo.auria.global"
 ODOO_DB   = "Auria_Business"; ODOO_UID = 8; ODOO_PWD = "123456"
 PAGE_ID   = "145285001991586"; IG_ID = "17841462343514591"
 AD_ACCT   = "act_1304156338260899"
-USER_TOKEN= "EAASVMwJoNLIBRgwWum1jWBbWdpZCnn0bh42jIujGBr5EqRhOEIz5IW47oZBvDL3Xh1CGHyNmGTfOgTDufLwth2I76M3mhZBRP03voZBL83IbOXZA8BW1ZBubwYeePPZAbZCy7mPbZAgC5OJFGTEPAhNDSRmc0SeFHtECyqui88k7Caz70AEH87kAZCePIf4qmdINHMZBHQtquKy1qFrQwz3LkU5H2QBb39knwZBYhc3JaTXmL7uv8AMVuYm8upuIZA1RSoyDhyZCI06A0erwchSX0Xa50ZCrd7BegZDZD"
+USER_TOKEN= "EAAcSVW8N23cBRkEcgVDThTOd9lvKezMbzhB3kKLCeT6HUD7m4I5TMB5tg8ZAuXIlW0HcSnBqqFYpqYo1v59MMREn3L2xWTZCkwdE8AdXpQb3loaaMjWoydELwAQZAUZAuECSqPNX5RFJ3SWmYazVTLVIl6u2fmIZAlnLAV77kG90M7zqOiTFeP4K79mZBdC9poZAAZDZD"  # System User Token — permanent, never expires
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 BG="#0e1a0f";BG2="#1a2b1b";CARD="#1e2e1f";BORDER="#2d452e"
@@ -82,17 +82,62 @@ def fetch_odoo(cache_key=None):
                 overdue=overdue,projects=projects,sales=sales,today=today)
 
 @st.cache_data(ttl=300)
+def get_page_token_cached():
+    """Get page access token from system user token."""
+    pages = meta("me/accounts", {"fields":"id,name,access_token"})
+    return next((p["access_token"] for p in pages.get("data",[]) if p["id"]==PAGE_ID), None)
+
+@st.cache_data(ttl=300)
 def fetch_meta_all():
     pt=get_page_token()
     if not pt: return {"error":"No page token"}
 
-    # ── Conversations (paginated) ──────────────────────────────────────────
+    # ── FB Posts ───────────────────────────────────────────────────────
+    fb_posts=meta(f"{PAGE_ID}/posts",
+        {"fields":"id,message,created_time,likes.summary(true),comments.summary(true),shares",
+         "limit":"20"},token=pt)
+    fb_posts_data=fb_posts.get("data",[])
+
+    # ── FB Stories ─────────────────────────────────────────────────────
+    fb_stories=meta(f"{PAGE_ID}/stories",
+        {"fields":"id,media_type,creation_time,status"},token=pt)
+    fb_stories_active=[s for s in fb_stories.get("data",[]) if s.get("status")=="published"]
+
+    # ── IG Media ───────────────────────────────────────────────────────
+    ig_media=meta(f"{IG_ID}/media",
+        {"fields":"id,caption,media_type,timestamp,like_count,comments_count,permalink",
+         "limit":"30"})
+    ig_media_data=ig_media.get("data",[])
+
+    # ── IG Stories ─────────────────────────────────────────────────────
+    ig_stories=meta(f"{IG_ID}/stories",
+        {"fields":"id,media_type,timestamp","limit":"25"})
+    ig_stories_data=ig_stories.get("data",[])
+
+    # ── IG Follower growth ─────────────────────────────────────────────
+    from datetime import datetime as _dt, timedelta as _tdm
+    _since=str((_dt.now()-_tdm(days=30)).date())
+    _until=str(_dt.now().date())
+    ig_followers=meta(f"{IG_ID}/insights",
+        {"metric":"follower_count","period":"day","since":_since,"until":_until})
+    ig_follower_data=ig_followers.get("data",[{}])[0].get("values",[]) if ig_followers.get("data") else []
+
+    # ── IG Account info ────────────────────────────────────────────────
+    ig_account=meta(f"{IG_ID}",
+        {"fields":"id,name,followers_count,media_count,biography"})
+
+    # ── FB Page info ───────────────────────────────────────────────────
+    fb_page=meta(f"{PAGE_ID}",
+        {"fields":"id,name,fan_count,followers_count"},token=pt)
+
+    # ── Conversations (paginated) ──────────────────────────────────────
     all_convos=[]
     params={"fields":"id,updated_time,message_count,participants,messages{from,created_time,tags}","limit":"25"}
     batch=meta(f"{PAGE_ID}/conversations",params,token=pt)
-    if "error" in batch: return {"error":str(batch["error"])}
-    all_convos.extend(batch.get("data",[]))
-    cursor=batch.get("paging",{}).get("cursors",{}).get("after")
+    if "error" in batch and not fb_posts_data:
+        return {"error":str(batch["error"])}
+    all_convos.extend(batch.get("data",[]) if "error" not in batch else [])
+    cursor=batch.get("paging",{}).get("cursors",{}).get("after") if "error" not in batch else None
     while cursor and len(all_convos)<150:
         p2=dict(params); p2["after"]=cursor
         batch=meta(f"{PAGE_ID}/conversations",p2,token=pt)
@@ -196,7 +241,11 @@ def fetch_meta_all():
                 for k,v in sorted(daily.items())]
 
     return dict(convos=convos_parsed,ads=ads_parsed,
-                sum_c=summary_convos,sum_a=summary_ads,daily=daily_list)
+                sum_c=summary_convos,sum_a=summary_ads,daily=daily_list,
+                fb_posts=fb_posts_data,fb_stories=fb_stories_active,
+                fb_page=fb_page,ig_media=ig_media_data,
+                ig_stories=ig_stories_data,ig_followers=ig_follower_data,
+                ig_account=ig_account)
 
 
 @st.cache_data(ttl=30)
