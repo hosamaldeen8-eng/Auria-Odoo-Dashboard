@@ -1618,6 +1618,8 @@ Be decisive and specific. Use the actual names and details from the messages. Ke
                 import urllib.request as _ur2
                 import json as _j2
                 try:
+                    import os as _os
+                    _ak = _os.environ.get("ANTHROPIC_API_KEY","")
                     resp = _ur2.urlopen(
                         _ur2.Request(
                             "https://api.anthropic.com/v1/messages",
@@ -1628,7 +1630,8 @@ Be decisive and specific. Use the actual names and details from the messages. Ke
                             }).encode(),
                             headers={
                                 "content-type": "application/json",
-                                "anthropic-version": "2023-06-01"
+                                "anthropic-version": "2023-06-01",
+                                "x-api-key": _ak,
                             },
                             method="POST"
                         ), timeout=30)
