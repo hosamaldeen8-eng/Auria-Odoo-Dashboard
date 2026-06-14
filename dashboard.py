@@ -647,6 +647,94 @@ with tab3:
 
         # ── Section 1: Ad performance KPIs ────────────────────────────────
         st.markdown(f"<p style='font-size:12px;color:{MUTED};text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px'>📣 Ad performance — last 30 days</p>",unsafe_allow_html=True)
+        # Social + Ad KPIs
+        fb_p   = md.get("fb_page",{})
+        ig_acc = md.get("ig_account",{})
+        ig_med = md.get("ig_media",[])
+        fb_sts = md.get("fb_stories",[])
+        ig_sts = md.get("ig_stories",[])
+        fb_pst = md.get("fb_posts",[])
+        ig_flw = md.get("ig_followers",[])
+
+        # Posts this week
+        from datetime import datetime as _dtm, timedelta as _tdmk
+        _wk_ago = (_dtm.now()-_tdmk(days=7)).strftime("%Y-%m-%d")
+        ig_wk = [m for m in ig_med if m.get("timestamp","")[:10]>=_wk_ago]
+        fb_wk = [p for p in fb_pst if p.get("created_time","")[:10]>=_wk_ago]
+
+        # Total engagement this week
+        ig_likes = sum(m.get("like_count",0) for m in ig_wk)
+        ig_cmts  = sum(m.get("comments_count",0) for m in ig_wk)
+        fb_likes = sum(p.get("likes",{}).get("summary",{}).get("total_count",0) for p in fb_wk)
+        fb_cmts  = sum(p.get("comments",{}).get("summary",{}).get("total_count",0) for p in fb_wk)
+
+        # Follower gain this week
+        flw_vals = ig_flw[-7:] if ig_flw else []
+        flw_gain = sum(v.get("value",0) for v in flw_vals)
+
+        st.markdown(f"<p style='font-size:12px;color:{MUTED};text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px'>📱 Social Media — Live</p>",unsafe_allow_html=True)
+        sc=st.columns(6)
+        kpi(sc[0],"FB Followers",   f"{fb_p.get('fan_count',0):,}",     "Auria Page",BLUE)
+        kpi(sc[1],"IG Followers",   f"{ig_acc.get('followers_count',0):,}","Auria IG",  "#c97bc9")
+        kpi(sc[2],"IG Posts/wk",    str(len(ig_wk)),                       "this week",  MID)
+        kpi(sc[3],"FB Posts/wk",    str(len(fb_wk)),                       "this week",  BLUE)
+        kpi(sc[4],"Active Stories",  str(len(fb_sts)+len(ig_sts)),         "FB+IG now",  AMBER)
+        kpi(sc[5],"IG Followers +",  f"+{flw_gain:,}",                     "gained/7d",  OK_FG if flw_gain>0 else CRIT_FG)
+
+        st.markdown(f"<hr style='border-color:{BORDER};margin:12px 0'>",unsafe_allow_html=True)
+        st.markdown(f"<p style='font-size:12px;color:{MUTED};text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px'>📊 Engagement this week</p>",unsafe_allow_html=True)
+        ec=st.columns(4)
+        kpi(ec[0],"IG Likes",   str(ig_likes), f"{len(ig_wk)} posts",  "#c97bc9")
+        kpi(ec[1],"IG Comments",str(ig_cmts),  f"{len(ig_wk)} posts",  "#c97bc9")
+        kpi(ec[2],"FB Likes",   str(fb_likes), f"{len(fb_wk)} posts",  BLUE)
+        kpi(ec[3],"FB Comments",str(fb_cmts),  f"{len(fb_wk)} posts",  BLUE)
+
+        st.markdown(f"<hr style='border-color:{BORDER};margin:12px 0'>",unsafe_allow_html=True)
+
+        # Latest posts side by side
+        lc1,lc2 = st.columns(2)
+        with lc1:
+            st.markdown(f"<p style='font-size:12px;color:{MUTED};text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px'>📸 Latest IG Posts</p>",unsafe_allow_html=True)
+            for m in ig_med[:8]:
+                ts  = m.get("timestamp","")[:10]
+                cap = (m.get("caption","") or "—")[:60]
+                mtype = "🎬" if m.get("media_type")=="VIDEO" else "🖼"
+                st.markdown(
+                    f'<div style="display:flex;gap:8px;padding:5px 0;border-bottom:0.5px solid {BORDER};align-items:center">' +
+                    f'<span style="font-size:16px">{mtype}</span>' +
+                    f'<div style="flex:1"><div style="font-size:12px;color:{TEXT}">{cap}</div>' +
+                    f'<div style="font-size:10px;color:{MUTED}">{ts} · ❤️{m.get("like_count",0)} 💬{m.get("comments_count",0)}</div></div></div>',
+                    unsafe_allow_html=True)
+        with lc2:
+            st.markdown(f"<p style='font-size:12px;color:{MUTED};text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px'>📘 Latest FB Posts</p>",unsafe_allow_html=True)
+            for p in fb_pst[:8]:
+                ts  = p.get("created_time","")[:10]
+                msg = (p.get("message","") or "—")[:60]
+                lk  = p.get("likes",{}).get("summary",{}).get("total_count",0)
+                cm  = p.get("comments",{}).get("summary",{}).get("total_count",0)
+                sh  = p.get("shares",{}).get("count",0) if p.get("shares") else 0
+                st.markdown(
+                    f'<div style="display:flex;gap:8px;padding:5px 0;border-bottom:0.5px solid {BORDER};align-items:center">' +
+                    f'<span style="font-size:16px">📘</span>' +
+                    f'<div style="flex:1"><div style="font-size:12px;color:{TEXT}">{msg}</div>' +
+                    f'<div style="font-size:10px;color:{MUTED}">{ts} · ❤️{lk} 💬{cm} 🔁{sh}</div></div></div>',
+                    unsafe_allow_html=True)
+
+        # IG Follower growth chart
+        if ig_flw:
+            st.markdown(f"<hr style='border-color:{BORDER};margin:12px 0'>",unsafe_allow_html=True)
+            st.markdown(f"<p style='font-size:12px;color:{MUTED};text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px'>📈 IG Follower growth — last 30 days</p>",unsafe_allow_html=True)
+            df_flw=pd.DataFrame(ig_flw)
+            df_flw["date"]=pd.to_datetime(df_flw["end_time"]).dt.strftime("%m-%d")
+            fig_flw=px.bar(df_flw,x="date",y="value",color_discrete_sequence=["#c97bc9"])
+            fig_flw.update_layout(margin=dict(l=0,r=0,t=10,b=0),height=180,
+                                  plot_bgcolor=PLOT_BG,paper_bgcolor=PLOT_BG,font_color=TEXT,
+                                  xaxis_title="",yaxis_title="New followers")
+            fig_flw.update_xaxes(gridcolor=BORDER); fig_flw.update_yaxes(gridcolor=BORDER)
+            st.plotly_chart(fig_flw,use_container_width=True)
+
+        st.markdown(f"<hr style='border-color:{BORDER};margin:12px 0'>",unsafe_allow_html=True)
+        st.markdown(f"<p style='font-size:12px;color:{MUTED};text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px'>📣 Ad performance — last 30 days</p>",unsafe_allow_html=True)
         ac=st.columns(6)
         kpi(ac[0],"Total ad spend",f"${sum_a.get('total_spend',0):,.2f}","USD")
         kpi(ac[1],"Total reach",f"{sum_a.get('total_reach',0):,}","unique people")
