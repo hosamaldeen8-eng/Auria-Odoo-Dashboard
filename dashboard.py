@@ -1618,25 +1618,26 @@ Be decisive and specific. Use the actual names and details from the messages. Ke
                 import urllib.request as _ur2
                 import json as _j2
                 try:
-                    import os as _os
-                    _ak = _os.environ.get("ANTHROPIC_API_KEY","")
+                    _oai_key = st.secrets.get("OPENAI_API_KEY","")
                     resp = _ur2.urlopen(
                         _ur2.Request(
-                            "https://api.anthropic.com/v1/messages",
+                            "https://api.openai.com/v1/chat/completions",
                             data=_j2.dumps({
-                                "model": "claude-sonnet-4-6",
+                                "model": "gpt-4o",
                                 "max_tokens": 1000,
-                                "messages": [{"role":"user","content": ai_prompt}]
+                                "messages": [
+                                    {"role":"system","content":"You are the operations assistant for Auria, a Libyan natural haircare brand. Be concise, decisive and specific."},
+                                    {"role":"user","content": ai_prompt}
+                                ]
                             }).encode(),
                             headers={
-                                "content-type": "application/json",
-                                "anthropic-version": "2023-06-01",
-                                "x-api-key": _ak,
+                                "Content-Type": "application/json",
+                                "Authorization": f"Bearer {_oai_key}",
                             },
                             method="POST"
                         ), timeout=30)
                     result = _j2.loads(resp.read())
-                    st.session_state.dr_summary = result["content"][0]["text"]
+                    st.session_state.dr_summary = result["choices"][0]["message"]["content"]
                     st.session_state.dr_summary_period = range_opt
                     st.rerun()
                 except Exception as e:
