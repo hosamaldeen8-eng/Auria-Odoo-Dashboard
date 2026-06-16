@@ -841,8 +841,97 @@ with tab3:
                     fig2.update_xaxes(gridcolor=BORDER); fig2.update_yaxes(gridcolor=BORDER)
                     st.plotly_chart(fig2,use_container_width=True)
 
-        # Conversations table
-        st.markdown(f"<p style='font-size:12px;color:{MUTED};margin:8px 0 4px'>All conversations</p>",unsafe_allow_html=True)
+
+        # ── CS Team Per-Member Performance ────────────────────────────────────
+        st.markdown(f"<hr style='border-color:{BORDER};margin:14px 0'>",unsafe_allow_html=True)
+        st.markdown(f"<p style='font-size:12px;color:{MUTED};text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px'>👥 CS Team — Orders & Messages this week</p>",unsafe_allow_html=True)
+
+        from datetime import timedelta as _tdcs
+        _mon_cs = str(date.today() - _tdcs(days=date.today().weekday()))
+        _cs_orders = odoo("sale.order","search_read",
+            [["state","in",["sale","done"]],["date_order",">=",_mon_cs]],
+            {"fields":["name","user_id","date_order","amount_total"],"limit":500})
+
+        _cs_by_sp = {}
+        for _o in _cs_orders:
+            _uid  = _o["user_id"][0] if _o["user_id"] else 0
+            _name = _o["user_id"][1] if _o["user_id"] else "Unknown"
+            _cs_by_sp.setdefault(_uid,{"name":_name,"orders":0,"total":0.0})
+            _cs_by_sp[_uid]["orders"] += 1
+            _cs_by_sp[_uid]["total"]  += _o["amount_total"]
+
+        if _cs_by_sp:
+            _sorted_cs  = sorted(_cs_by_sp.items(),key=lambda x:-x[1]["orders"])
+            _max_orders = max(v["orders"] for _,v in _sorted_cs) or 1
+            _tot_orders = sum(v["orders"] for _,v in _sorted_cs)
+            _tot_rev    = sum(v["total"]  for _,v in _sorted_cs)
+            _inbox_rcvd = sum_c.get("total_rcvd",0)
+            _inbox_sent = sum_c.get("total_sent",0)
+
+            # KPIs
+            _ck = st.columns(4)
+            kpi(_ck[0],"FB Messages In",  str(_inbox_rcvd), "received from customers", AMBER)
+            kpi(_ck[1],"FB Messages Out", str(_inbox_sent), "sent by page", MID)
+            kpi(_ck[2],"Orders this week", str(_tot_orders), "all CS team", OK_FG)
+            kpi(_ck[3],"Revenue this week",f"{_tot_rev:,.0f}","LYD", AMBER)
+
+            st.markdown("<div style='height:12px'></div>",unsafe_allow_html=True)
+
+            # Per-member cards
+            _medals  = ["🥇","🥈","🥉"]
+            _cs_cols = st.columns(min(len(_sorted_cs),4))
+            _clrs    = [AMBER,MID,"#5A9E34","#5b9bd5","#c97bc9"]
+            for _i,(_uid,_sp) in enumerate(_sorted_cs):
+                _col = _cs_cols[_i % 4]
+                _c   = _clrs[_i % len(_clrs)]
+                _pct = round(_sp["orders"]/_max_orders*100)
+                _avg = round(_sp["total"]/_sp["orders"]) if _sp["orders"] else 0
+                _share = round(_sp["orders"]/_tot_orders*100) if _tot_orders else 0
+                _mn  = _medals[_i] if _i<3 else f"#{_i+1}"
+                # Estimate msgs handled (proportional to orders)
+                _msgs_est = round(_inbox_rcvd * _sp["orders"] / _tot_orders) if _tot_orders else 0
+                _col.markdown(
+                    f'<div style="background:{CARD};border:0.5px solid {BORDER};border-top:3px solid {_c};' +
+                    f'border-radius:10px;padding:12px 14px;margin-bottom:8px">' +
+                    f'<div style="font-size:13px;font-weight:600;color:{TEXT};margin-bottom:10px">{_mn} {_sp["name"].split()[0]}</div>' +
+                    f'<div style="display:flex;justify-content:space-between;margin-bottom:4px">' +
+                    f'<span style="font-size:11px;color:{MUTED}">📦 Orders</span>' +
+                    f'<span style="font-size:14px;font-weight:700;color:{_c}">{_sp["orders"]}</span></div>' +
+                    f'<div style="background:{BG2};border-radius:3px;height:4px;margin-bottom:8px">' +
+                    f'<div style="width:{_pct}%;height:4px;background:{_c};border-radius:3px"></div></div>' +
+                    f'<div style="display:flex;justify-content:space-between;margin-bottom:3px">' +
+                    f'<span style="font-size:10px;color:{MUTED}">💬 Msgs est.</span>' +
+                    f'<span style="font-size:11px;color:{TEXT}">{_msgs_est}</span></div>' +
+                    f'<div style="display:flex;justify-content:space-between;margin-bottom:3px">' +
+                    f'<span style="font-size:10px;color:{MUTED}">💰 Avg/order</span>' +
+                    f'<span style="font-size:11px;color:{MUTED}">{_avg:,} LYD</span></div>' +
+                    f'<div style="display:flex;justify-content:space-between">' +
+                    f'<span style="font-size:10px;color:{MUTED}">📊 Share</span>' +
+                    f'<span style="font-size:11px;color:{MUTED}">{_share}%</span></div>' +
+                    f'</div>',
+                    unsafe_allow_html=True)
+
+            # Stacked bar — daily orders by agent
+            _df_cs = pd.DataFrame([{
+                "Date": pd.to_datetime(_o["date_order"]).date(),
+                "Agent": _o["user_id"][1].split()[0] if _o["user_id"] else "—",
+                "Orders": 1}
+                for _o in _cs_orders])
+            _df_csg = _df_cs.groupby(["Date","Agent"])["Orders"].sum().reset_index()
+            _fig_cs = px.bar(_df_csg,x="Date",y="Orders",color="Agent",barmode="stack",
+                color_discrete_sequence=[AMBER,MID,"#5A9E34","#5b9bd5"],
+                title="Daily orders by CS agent")
+            _fig_cs.update_layout(margin=dict(l=0,r=0,t=36,b=0),height=200,
+                plot_bgcolor=PLOT_BG,paper_bgcolor=PLOT_BG,font_color=TEXT,
+                title_font_color=MUTED,title_font_size=12,
+                legend=dict(font=dict(color=TEXT,size=10)))
+            _fig_cs.update_xaxes(gridcolor=BORDER); _fig_cs.update_yaxes(gridcolor=BORDER)
+            st.plotly_chart(_fig_cs,use_container_width=True)
+
+        st.markdown(f'<div style="font-size:10px;color:{MUTED};font-style:italic;margin-bottom:10px">⚡ FB messages shown are page totals. Per-agent breakdown estimated from Odoo order share. Exact per-agent FB counts require Meta Business Suite agent assignment.</div>',unsafe_allow_html=True)
+
+        # ── Conversation table ─────────────────────────────────────────────────
+        st.markdown(f"<p style='font-size:12px;color:{MUTED};margin:8px 0 4px'>All conversations (latest 100)</p>",unsafe_allow_html=True)
         df_c=pd.DataFrame([{"Customer":c["customer"],"Platform":c["platform"],
             "Last active":c["updated"],"Msgs in":c["received"],"Msgs out":c["sent"],
             "Total":c["total"],"Response":f"{c['resp_min']} min" if c["resp_min"] is not None else "—"}
