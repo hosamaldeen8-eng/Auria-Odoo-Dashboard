@@ -1697,7 +1697,13 @@ Be decisive and specific. Use the actual names and details from the messages. Ke
                 import urllib.request as _ur2
                 import json as _j2
                 try:
-                    _oai_key = st.secrets.get("OPENAI_API_KEY","")
+                    try:
+                        _oai_key = st.secrets["OPENAI_API_KEY"]
+                    except Exception:
+                        _oai_key = ""
+                    if not _oai_key:
+                        st.error("❌ OPENAI_API_KEY not found in Streamlit Secrets. Go to app Settings → Secrets and add it.")
+                        raise Exception("No API key configured")
                     resp = _ur2.urlopen(
                         _ur2.Request(
                             "https://api.openai.com/v1/chat/completions",
@@ -1720,7 +1726,13 @@ Be decisive and specific. Use the actual names and details from the messages. Ke
                     st.session_state.dr_summary_period = range_opt
                     st.rerun()
                 except Exception as e:
-                    st.error(f"AI error: {e}")
+                    err_msg = str(e)
+                    if "401" in err_msg:
+                        st.error("❌ OpenAI API key is invalid or expired. Check Streamlit Secrets → OPENAI_API_KEY")
+                    elif "No API key" in err_msg:
+                        pass  # already shown above
+                    else:
+                        st.error(f"AI error: {e}")
 
         if st.session_state.dr_summary:
             st.markdown(
