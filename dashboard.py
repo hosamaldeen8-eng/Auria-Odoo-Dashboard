@@ -130,21 +130,35 @@ def fetch_meta_all():
     fb_page=meta(f"{PAGE_ID}",
         {"fields":"id,name,fan_count,followers_count"},token=pt)
 
-    # ── Conversations (paginated) ──────────────────────────────────────
+    # ── Messaging insights (page-level — no pages_messaging perm needed) ──
+    _msg_ins = meta(f"{PAGE_ID}/insights",
+        {"metric":"page_messages_new_conversations_unique,page_messages_blocked_conversations_unique",
+         "period":"day","date_preset":"last_28_days"}, token=pt)
+    msg_by_day={}
+    for _d in _msg_ins.get("data",[]):
+        _mn = _d["name"]
+        for _v in _d.get("values",[]):
+            _day = _v["end_time"][:10]
+            msg_by_day.setdefault(_day,{"new":0,"blocked":0})
+            if "new_conversations" in _mn: msg_by_day[_day]["new"]     = _v.get("value",0)
+            elif "blocked"         in _mn: msg_by_day[_day]["blocked"] = _v.get("value",0)
+
+    # Conversations list (gracefully empty if pages_messaging not granted)
     all_convos=[]
-    params={"fields":"id,updated_time,message_count,participants,messages{from,created_time,tags}","limit":"25"}
-    batch=meta(f"{PAGE_ID}/conversations",params,token=pt)
-    if "error" in batch and not fb_posts_data:
-        return {"error":str(batch["error"])}
-    all_convos.extend(batch.get("data",[]) if "error" not in batch else [])
-    cursor=batch.get("paging",{}).get("cursors",{}).get("after") if "error" not in batch else None
-    while cursor and len(all_convos)<150:
-        p2=dict(params); p2["after"]=cursor
-        batch=meta(f"{PAGE_ID}/conversations",p2,token=pt)
-        data=batch.get("data",[]); 
-        if not data: break
-        all_convos.extend(data)
-        cursor=batch.get("paging",{}).get("cursors",{}).get("after")
+    _cb=meta(f"{PAGE_ID}/conversations",
+        {"fields":"id,updated_time,message_count,participants,messages{from,created_time,tags}",
+         "limit":"25"}, token=pt)
+    if "error" not in _cb:
+        all_convos.extend(_cb.get("data",[]))
+        _cur=_cb.get("paging",{}).get("cursors",{}).get("after")
+        while _cur and len(all_convos)<150:
+            _b2=meta(f"{PAGE_ID}/conversations",
+                {"fields":"id,updated_time,message_count,participants,messages{from,created_time,tags}",
+                 "limit":"25","after":_cur}, token=pt)
+            _dd=_b2.get("data",[])
+            if not _dd: break
+            all_convos.extend(_dd)
+            _cur=_b2.get("paging",{}).get("cursors",{}).get("after")
 
     # Parse conversations
     convos_parsed=[]; resp_times=[]; daily={}
