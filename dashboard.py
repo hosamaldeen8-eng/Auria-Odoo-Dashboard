@@ -1441,10 +1441,71 @@ with tab5:
         if not html: return ""
         t = _re.sub(r'<br\s*/?>', '\n', html or "")
         t = _re.sub(r'</p>', '\n', t)
+        t = _re.sub(r'</li>', '\n', t)
+        t = _re.sub(r'<li>', '• ', t)
         t = _re.sub(r'<[^>]+>', '', t)
         t = _re.sub(r'[ \t]+', ' ', t)
         t = _re.sub(r'\n{3,}', '\n\n', t)
         return t.strip()
+
+    def _parse_report(html):
+        """Parse structured HTML daily report into sections."""
+        if not html or len(html) < 20: return None
+        # Extract name and date from header line
+        # Format: 📋 التقرير اليومي — NAME | DATE
+        header = _re.search(r'التقرير اليومي.*?—\s*([^|<]+?)\s*(?:\|([^<]+))?</', html)
+        name  = header.group(1).strip() if header else ""
+        rdate = header.group(2).strip() if (header and header.group(2)) else ""
+
+        def _section(markers):
+            """Extract items after any of the given Arabic markers."""
+            for marker in markers:
+                pat = rf'{_re.escape(marker)}.*?</(?:b|strong)>\s*</p>(.*?)(?=<p>|$)'
+                m2 = _re.search(pat, html, _re.DOTALL)
+                if m2:
+                    block = m2.group(1)
+                    items = _re.findall(r'<li>(.*?)</li>', block, _re.DOTALL)
+                    if items:
+                        return [_re.sub(r'<[^>]+>','',i).strip() for i in items if i.strip()]
+                    # plain paragraph
+                    txt = _re.sub(r'<[^>]+>','',block).strip()
+                    return [txt] if txt and txt != "لا يوجد" else []
+            return []
+
+        def _text_section(markers):
+            for marker in markers:
+                pat = rf'{_re.escape(marker)}.*?</(?:b|strong)>\s*</p>(.*?)(?=<p>|$)'
+                m2 = _re.search(pat, html, _re.DOTALL)
+                if m2:
+                    return _re.sub(r'<[^>]+>','',m2.group(1)).strip()
+            return ""
+
+        achievements = _section(["✅ المنجز اليوم","✅ الإنجازات","الإنجازات","المنجز"])
+        challenges   = _text_section(["⚠️ التحديات","🔴 التحديات","التحديات"])
+        pending      = _section(["📌 المهام المعلقة","المهام المعلقة","المعلق"])
+        tomorrow     = _section(["📌 غداً","📅 خطة الغد","خطة الغد","غداً","غد"])
+        notes        = _text_section(["💬 ملاحظات","ملاحظات"])
+
+        # Build clean plain-text version for AI
+        lines = []
+        if name:  lines.append(f"الاسم: {name}")
+        if rdate: lines.append(f"التاريخ: {rdate}")
+        if achievements: lines.append("الإنجازات:\n" + "\n".join(f"  • {a}" for a in achievements))
+        if challenges and challenges != "لا يوجد": lines.append(f"التحديات: {challenges}")
+        if pending:   lines.append("المعلق:\n" + "\n".join(f"  • {p}" for p in pending))
+        if tomorrow:  lines.append("غداً:\n"   + "\n".join(f"  • {t}" for t in tomorrow))
+        if notes:     lines.append(f"ملاحظات: {notes}")
+
+        return {
+            "name": name, "date": rdate,
+            "achievements": achievements,
+            "challenges": challenges,
+            "pending": pending,
+            "tomorrow": tomorrow,
+            "notes": notes,
+            "text": "\n".join(lines),
+            "raw": _strip_html(html)
+        }
 
     @st.cache_data(ttl=120)
     def fetch_daily_data(ck=None):
@@ -1531,7 +1592,12 @@ with tab5:
                 if uname and uname in members:
                     matched = uname; break
         if matched:
-            members[matched]["msgs"].append({"date": date_str, "body": body})
+            parsed = _parse_report(msg.get("body",""))
+            members[matched]["msgs"].append({
+                "date": date_str,
+                "body": body,
+                "parsed": parsed
+            })
 
     # ── Submission overview ─────────────────────────────────────────
     submitted = [k for k,v in members.items() if v["msgs"]]
@@ -1580,6 +1646,19 @@ with tab5:
             f'Team members should submit their daily reports as Log Notes on their daily report tasks in Odoo.</span></div>',
             unsafe_allow_html=True)
     else:
+        # Build context using parsed structure where available
+        report_context = []
+        for mname, md5 in members.items():
+            if md5["msgs"]:
+                entries = []
+                for msg in sorted(md5["msgs"], key=lambda x: x["date"]):
+                    p = msg.get("parsed")
+                    if p and p.get("text"):
+                        entries.append(f"[{msg['date']}]\n{p['text']}")
+                    elif msg.get("body"):
+                        entries.append(f"[{msg['date']}] {msg['body'][:300]}")
+                if entries:
+                    report_context.append(f"**{mname} ({md5['project']}):**\n" + "\n\n".join(entries))
         context_text = "\n\n".join(report_context)
         missing_text = f"No report: {', '.join(pending)}" if pending else "All members reported."
 
