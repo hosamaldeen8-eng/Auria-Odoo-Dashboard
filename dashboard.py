@@ -217,15 +217,23 @@ def fetch_meta_all():
             })
     ads_parsed.sort(key=lambda x:-x["msgs_started"])
 
+    # Page-level insight totals (accurate, no extra permission needed)
+    _total_new_wk  = sum(v["new"]     for k,v in msg_by_day.items() if k >= str(date.today()-timedelta(days=7))[:10])
+    _total_new_28d = sum(v["new"]     for v in msg_by_day.values())
+
     summary_convos={
-        "total":len(convos_parsed),
-        "total_rcvd":sum(c["received"] for c in convos_parsed),
+        "total":len(convos_parsed) or _total_new_wk,
+        "total_rcvd":sum(c["received"] for c in convos_parsed) if convos_parsed else _total_new_wk,
         "total_sent":sum(c["sent"]     for c in convos_parsed),
         "avg_resp":round(sum(resp_times)/len(resp_times),1) if resp_times else None,
         "fast":sum(1 for r in resp_times if r<=30),
         "slow":sum(1 for r in resp_times if r>60),
         "messenger":sum(1 for c in convos_parsed if c["platform"]=="Messenger"),
         "instagram":sum(1 for c in convos_parsed if c["platform"]=="Instagram"),
+        "new_convos_7d":  _total_new_wk,
+        "new_convos_28d": _total_new_28d,
+        "msg_by_day": [{"date":k,"new":v["new"],"blocked":v["blocked"]}
+                       for k,v in sorted(msg_by_day.items())[-14:]],
     }
     summary_ads={
         "total_spend":round(total_spend,2),
@@ -805,19 +813,33 @@ with tab3:
 
         ic=st.columns(6)
         avg_r=sum_c.get("avg_resp")
-        kpi(ic[0],"Conversations",str(sum_c.get("total",0)),"total threads")
-        kpi(ic[1],"Msgs received",str(sum_c.get("total_rcvd",0)),"from customers")
-        kpi(ic[2],"Msgs sent",str(sum_c.get("total_sent",0)),"by page")
-        kpi(ic[3],"Avg response",f"{avg_r} min" if avg_r else "—","first reply",
+        _new7  = sum_c.get("new_convos_7d",sum_c.get("total",0))
+        _new28 = sum_c.get("new_convos_28d",0)
+        _sent  = sum_c.get("total_sent",0)
+        kpi(ic[0],"New convos/7d",  f"{_new7:,}",       "unique customers",    AMBER)
+        kpi(ic[1],"New convos/28d", f"{_new28:,}",      "last 28 days",        MID)
+        kpi(ic[2],"Msgs sent",      str(_sent) if _sent else "—", "by page",   MID)
+        kpi(ic[3],"Avg response",   f"{avg_r} min" if avg_r else "—","first reply",
             RED if avg_r and avg_r>60 else MID)
-        kpi(ic[4],"Fast ≤30 min",str(sum_c.get("fast",0)),"quick replies",MID)
-        kpi(ic[5],"Slow >60 min",str(sum_c.get("slow",0)),"slow replies",
+        kpi(ic[4],"Fast ≤30 min",   str(sum_c.get("fast",0)),  "quick replies", MID)
+        kpi(ic[5],"Slow >60 min",   str(sum_c.get("slow",0)),  "slow replies",
             RED if sum_c.get("slow",0)>10 else AMBER)
 
         st.markdown("<div style='height:12px'></div>",unsafe_allow_html=True)
 
         # Daily chart
-        if daily:
+        # Use page insight data for daily chart (more accurate than conversation parsing)
+        _mbd = sum_c.get("msg_by_day",[])
+        if _mbd:
+            df_day=pd.DataFrame(_mbd)
+            df_day["Date"]=pd.to_datetime(df_day["date"])
+            dc1,dc2=st.columns(2)
+            with dc1:
+                fig=px.bar(df_day,x="Date",y="new",
+                           color_discrete_sequence=[AMBER],
+                           title="New conversations per day (last 14 days)")
+                fig.update_traces(name="New conversations")
+        elif daily:
             df_day=pd.DataFrame(daily)
             df_day["Date"]=pd.to_datetime(df_day["Date"])
             dc1,dc2=st.columns(2)
