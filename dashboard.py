@@ -1510,9 +1510,9 @@ with tab5:
     @st.cache_data(ttl=120)
     def fetch_daily_data(ck=None):
         thirty = str(date.today() - _td5(days=30))
-        # All daily report tasks
+        # All daily report tasks — exclude Customer Service (project_id=6)
         daily_tasks = odoo("project.task","search_read",
-            [["active","=",True],
+            [["active","=",True],["project_id","!=",6],
              "|",["name","ilike","التقرير اليومي"],["name","ilike","تقرير يومي"]],
             {"fields":["id","name","project_id","user_ids","state","write_date"],"limit":50})
         task_ids = [t["id"] for t in daily_tasks]
